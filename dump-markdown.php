@@ -21,13 +21,32 @@ class AdminerDumpMarkdown {
 	}
 
 	function _database() {
-		echo "\r\n";
+		echo "\n";
 	}
 
 	function dumpData($table, $style, $query) {
+		function format_value($s, $l, $c) {
+			return (strlen($s) > $l) ? substr($s, 0, $l) : str_pad($s, $l, $c);
+		}
+
+		function map($array, $width, $c) {
+			foreach ($array as $k => &$v) $v = format_value($v, $width[$k], $c);
+			return $array;
+		}
+
+		function map_header($array) {
+			foreach ($array as $k => &$v) $v = $k;
+			return $array;
+		}
+
+		function map_mtable($array) {
+			foreach ($array as $k => &$v) $v = '-';
+			return $array;
+		}
+
 		if ($_POST["format"] == "markdown") {
 			if ($this->database) {
-				echo "\r\n";
+				echo "\n";
 			} else {
 				$this->database = true;
 				register_shutdown_function(array($this, '_database'));
@@ -35,17 +54,36 @@ class AdminerDumpMarkdown {
 			$connection = connection();
 			$result = $connection->query($query, 1);
 			if ($result) {
-				echo '## ' . addcslashes($table, "\r\n\"\\") . "\r\n";
-				$first = true;
+				$rn = 0;
+				$sample_rows = array();
+				$column_width = array();
+
+				echo '## ' . addcslashes($table, "\r\n\"\\") . "\n\n";
+
 				while ($row = $result->fetch_assoc()) {
-					if ($first) {
-						echo implode(" | ", array_keys($row)) . "\r\n";
-						echo implode(" | ", array_fill(0, count(array_keys($row)), '--')). "\r\n";
-						$first = false;
+					switch(true) {
+						case $rn==0:
+							foreach ($row as $key => $val) {
+								$column_width[$key] = strlen($key);
+							}
+						case $rn<100:
+							$sample_rows[$rn]=$row;
+							foreach ($row as $key => $val) {
+								$column_width[$key] = max($column_width[$key], strlen($row[$key]));
+							}
+							break;
+						case $rn==100:
+							echo implode(" | ", map(map_header($row), $column_width, " ")) . "\n";
+							echo implode("-|-", map(map_mtable($row), $column_width, "-")). "\n";
+							foreach ($sample_rows as $sample_row) {
+								echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
+							}
+						default:
+							echo implode(" | ", map($row, $column_width, " ")) . "\n";
 					}
-					echo implode(" | ", array_values($row)) . "\r\n";
+					$rn++;
 				}
-				echo "\r\n";
+				echo "\n";
 			}
 			return true;
 		}
