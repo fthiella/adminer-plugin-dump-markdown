@@ -83,6 +83,13 @@ class AdminerDumpMarkdown {
 					}
 					$rn++;
 				}
+                                if ($rn<100) {
+					echo implode(" | ", map(map_header($sample_rows[0]), $column_width, " ")) . "\n";
+					echo implode("-|-", map(map_mtable($sample_rows[0]), $column_width, "-")). "\n";
+					foreach ($sample_rows as $sample_row) {
+						echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
+					}
+				}
 				echo "\n";
 			}
 			return true;
