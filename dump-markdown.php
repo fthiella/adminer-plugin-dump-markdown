@@ -32,13 +32,6 @@ class AdminerDumpMarkdown {
 			foreach ($array as $k => &$v) $v = '-';
 			return $array;
 		}
-		function echo_sampled_rows($rows, $column_width) {
-			echo implode(" | ", map(map_header($rows[0]), $column_width, " ")) . "\n";
-			echo implode("-|-", map(map_mtable($rows[0]), $column_width, "-")). "\n";
-			foreach ($rows as $sample_row) {
-				echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
-			}
-		}
 
 		if ($_POST["format"] == "markdown") {
 			$connection = connection();
@@ -63,14 +56,22 @@ class AdminerDumpMarkdown {
 							}
 							break;
 						case $rn==100:
-							echo_sampled_rows($sample_rows, $column_width);
+							echo implode(" | ", map(map_header($row), $column_width, " ")) . "\n";
+							echo implode("-|-", map(map_mtable($row), $column_width, "-")). "\n";
+							foreach ($sample_rows as $sample_row) {
+								echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
+							}
 						default:
 							echo implode(" | ", map($row, $column_width, " ")) . "\n";
 					}
 					$rn++;
 				}
-				if ($rn<100) {
-					echo_sampled_rows($sample_rows, $column_width);
+                                if ($rn<100) {
+					echo implode(" | ", map(map_header($sample_rows[0]), $column_width, " ")) . "\n";
+					echo implode("-|-", map(map_mtable($sample_rows[0]), $column_width, "-")). "\n";
+					foreach ($sample_rows as $sample_row) {
+						echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
+					}
 				}
 				echo "\n";
 			}
