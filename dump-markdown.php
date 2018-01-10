@@ -8,9 +8,20 @@
 */
 class AdminerDumpMarkdown {
 	/** @access protected */
-
+	var $database = false;
+	
 	function dumpFormat() {
 		return array('markdown' => 'Markdown');
+	}
+
+	function dumpTable($table, $style, $is_view = false) {
+		if ($_POST["format"] == "markdown") {
+			return true;
+		}
+	}
+
+	function _database() {
+		echo "\n";
 	}
 
 	function dumpData($table, $style, $query) {
@@ -34,6 +45,12 @@ class AdminerDumpMarkdown {
 		}
 
 		if ($_POST["format"] == "markdown") {
+			if ($this->database) {
+				echo "\n";
+			} else {
+				$this->database = true;
+				register_shutdown_function(array($this, '_database'));
+			}
 			$connection = connection();
 			$result = $connection->query($query, 1);
 			if ($result) {
