@@ -8,57 +8,50 @@
 */
 class AdminerDumpMarkdown {
 	/** @access protected */
-	var $database = false;
-	
+
 	function dumpFormat() {
 		return array('markdown' => 'Markdown');
 	}
 
 	function dumpTable($table, $style, $is_view = false) {
 		if ($_POST["format"] == "markdown") {
+			echo '## ' . addcslashes($table, "\r\n\"\\") . "\n\n";
 			return true;
 		}
 	}
 
-	function _database() {
-		echo "\n";
+	function format_value($s, $l, $c) {
+		return (strlen($s) > $l) ? substr($s, 0, $l) : str_pad($s, $l, $c);
 	}
-
+	function map($array, $width, $c) {
+		foreach ($array as $k => &$v) $v = $this->format_value($v, $width[$k], $c);
+		return $array;
+	}
+	function map_header($array) {
+		foreach ($array as $k => &$v) $v = $k;
+		return $array;
+	}
+	function map_mtable($array) {
+		foreach ($array as $k => &$v) $v = '-';
+		return $array;
+	}
+	function echo_sampled_rows($rows, $column_width) {
+		echo implode(" | ", $this->map($this->map_header($rows[0]), $column_width, " ")) . "\n";
+		echo implode("-|-", $this->map($this->map_mtable($rows[0]), $column_width, "-")). "\n";
+		foreach ($rows as $sample_row) {
+			echo implode(" | ", $this->map($sample_row, $column_width, " ")) . "\n";
+		}
+	}
+	
 	function dumpData($table, $style, $query) {
-		function format_value($s, $l, $c) {
-			return (strlen($s) > $l) ? substr($s, 0, $l) : str_pad($s, $l, $c);
-		}
-
-		function map($array, $width, $c) {
-			foreach ($array as $k => &$v) $v = format_value($v, $width[$k], $c);
-			return $array;
-		}
-
-		function map_header($array) {
-			foreach ($array as $k => &$v) $v = $k;
-			return $array;
-		}
-
-		function map_mtable($array) {
-			foreach ($array as $k => &$v) $v = '-';
-			return $array;
-		}
-
+		
 		if ($_POST["format"] == "markdown") {
-			if ($this->database) {
-				echo "\n";
-			} else {
-				$this->database = true;
-				register_shutdown_function(array($this, '_database'));
-			}
 			$connection = connection();
 			$result = $connection->query($query, 1);
 			if ($result) {
 				$rn = 0;
 				$sample_rows = array();
 				$column_width = array();
-
-				echo '## ' . addcslashes($table, "\r\n\"\\") . "\n\n";
 
 				while ($row = $result->fetch_assoc()) {
 					switch(true) {
@@ -73,22 +66,14 @@ class AdminerDumpMarkdown {
 							}
 							break;
 						case $rn==100:
-							echo implode(" | ", map(map_header($row), $column_width, " ")) . "\n";
-							echo implode("-|-", map(map_mtable($row), $column_width, "-")). "\n";
-							foreach ($sample_rows as $sample_row) {
-								echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
-							}
+							$this->echo_sampled_rows($sample_rows, $column_width);
 						default:
-							echo implode(" | ", map($row, $column_width, " ")) . "\n";
+							echo implode(" | ", $this->map($row, $column_width, " ")) . "\n";
 					}
 					$rn++;
 				}
-                                if ($rn<100) {
-					echo implode(" | ", map(map_header($sample_rows[0]), $column_width, " ")) . "\n";
-					echo implode("-|-", map(map_mtable($sample_rows[0]), $column_width, "-")). "\n";
-					foreach ($sample_rows as $sample_row) {
-						echo implode(" | ", map($sample_row, $column_width, " ")) . "\n";
-					}
+				if ($rn<100) {
+					$this->echo_sampled_rows($sample_rows, $column_width);
 				}
 				echo "\n";
 			}
