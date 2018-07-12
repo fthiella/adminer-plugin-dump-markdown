@@ -1,11 +1,15 @@
 <?php
 
-/** Dump to MARKDOWN format
-* @link https://github.com/fthiella/adminer-plugin-dump-markdown
-* @author Federico Thiella, https://fthiella.github.io/ 
-* @license http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0
-* @license http://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
-*/
+/*
+ * AdminerDumpMarkdown - dump to MARKDOWN format v0.5 (July 12 2018)
+ *
+ * @link https://github.com/fthiella/adminer-plugin-dump-markdown
+ * @author Federico Thiella, https://fthiella.github.io/ 
+ * @license http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0
+ * @license http://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
+ *
+ */
+
 class AdminerDumpMarkdown {
 	/** @access protected */
 
@@ -23,28 +27,31 @@ class AdminerDumpMarkdown {
 	function format_value($s, $l, $c) {
 		return (strlen($s) > $l) ? substr($s, 0, $l) : str_pad($s, $l, $c);
 	}
+
 	function map($array, $width, $c) {
 		foreach ($array as $k => &$v) $v = $this->format_value($v, $width[$k], $c);
 		return $array;
 	}
+
 	function map_header($array) {
 		foreach ($array as $k => &$v) $v = $k;
 		return $array;
 	}
+
 	function map_mtable($array) {
 		foreach ($array as $k => &$v) $v = '-';
 		return $array;
 	}
+
 	function echo_sampled_rows($rows, $column_width) {
-		echo implode(" | ", $this->map($this->map_header($rows[0]), $column_width, " ")) . "\n";
-		echo implode("-|-", $this->map($this->map_mtable($rows[0]), $column_width, "-")). "\n";
+		echo implode(" | ", $this->map($this->map_header($rows[0]), $column_width, " ")) . "\r\n";
+		echo implode("-|-", $this->map($this->map_mtable($rows[0]), $column_width, "-")) . "\r\n";
 		foreach ($rows as $sample_row) {
-			echo implode(" | ", $this->map($sample_row, $column_width, " ")) . "\n";
+			echo implode(" | ", $this->map($sample_row, $column_width, " ")) . "\r\n";
 		}
 	}
-	
+
 	function dumpData($table, $style, $query) {
-		
 		if ($_POST["format"] == "markdown") {
 			$connection = connection();
 			$result = $connection->query($query, 1);
@@ -68,14 +75,14 @@ class AdminerDumpMarkdown {
 						case $rn==100:
 							$this->echo_sampled_rows($sample_rows, $column_width);
 						default:
-							echo implode(" | ", $this->map($row, $column_width, " ")) . "\n";
+							echo implode(" | ", $this->map($row, $column_width, " ")) . "\r\n";
 					}
 					$rn++;
 				}
 				if ($rn<100) {
 					$this->echo_sampled_rows($sample_rows, $column_width);
 				}
-				echo "\n";
+				echo "\r\n";
 			}
 			return true;
 		}
@@ -87,5 +94,4 @@ class AdminerDumpMarkdown {
 			return "markdown";
 		}
 	}
-
 }
