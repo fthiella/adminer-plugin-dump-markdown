@@ -1,7 +1,7 @@
 <?php
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v0.6 (October 13th, 2020)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v0.7 (October 14th, 2020)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/ 
@@ -15,7 +15,7 @@ class AdminerDumpMarkdown {
 	private $format = 'Markdown';
 
 	function _format_value($s, $l, $c) {
-		return (strlen($s) > $l) ? substr($s, 0, $l) : str_pad($s, $l, $c);
+		return (strlen(utf8_decode($s)) > $l) ? substr($s, 0, $l) : $s.str_repeat($c, $l-strlen(utf8_decode($s)));
 	}
 
 	function _map($array, $width, $c) {
@@ -33,17 +33,22 @@ class AdminerDumpMarkdown {
 		return $array;
 	}
 
-	function _echo_markdown_rows($rows, $column_width) {
-		echo implode(" | ", $this->_map($this->_map_header($rows[0]), $column_width, " ")) . "\r\n";
-		echo implode("-|-", $this->_map($this->_map_mtable($rows[0]), $column_width, "-")) . "\r\n";
-		foreach ($rows as $sample_row) {
-			echo implode(" | ", $this->_map($sample_row, $column_width, " ")) . "\r\n";
+	function _markdown_row($row, $column_width, $separator, $filler) {
+		return implode($separator, $this->_map($row, $column_width, $filler));
+	}
+
+	function _markdown_table($rows, $column_width) {
+		$content  = $this->_markdown_row($this->_map_header($rows[0]), $column_width, " | ", " ") . "\n";
+		$content .= $this->_markdown_row($this->_map_mtable($rows[0]), $column_width, "-|-", "-") . "\n";
+		foreach ($rows as $row) {
+			$content .= $this->_markdown_row($row, $column_width, " | ", " ") . "\n";
 		}
+		return $content;
 	}
 
 	function _bool($value) {
-        return $value == 1 ? 'Yes' : 'No';
-    }
+		return $value == 1 ? 'Yes' : 'No';
+	}
 
 	function dumpFormat() {
 		return array($this->type => $this->format);
@@ -51,7 +56,7 @@ class AdminerDumpMarkdown {
 
 	function dumpDatabase($db) {
 		if ($_POST["format"] == $this->type) {
-			echo '# ' . $db . "\r\n\r\n";
+			echo '# ' . $db . "\n\n";
 			return true;
 		}
 	}
@@ -59,30 +64,29 @@ class AdminerDumpMarkdown {
 	/* export table structure */
 	function dumpTable($table, $style, $is_view = false) {
 		if ($_POST["format"] == $this->type) {
-			echo '## ' . addcslashes($table, "\r\n\"\\") . "\r\n\r\n";
+			echo '## ' . addcslashes($table, "\n\"\\") . "\n\n";
 
 			if ($style) {
-				$status = table_status1($table);
+				echo "### table structure\n\n";
 
 				$field_rows = array();
-				$field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Primary' => 4, 'Null' => 4, 'AI' => 2]);
+				$field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Null' => 4, 'AI' => 2]);
 
 				foreach (fields($table) as $field) {
 					$new_row = [
 						'Column name' => $field['field'],
 						'Type' => $field['full_type'],
 						'Comment' => $field['comment'],
-						'Primary' => $this->_bool($field['primary']),
 						'Null' => $this->_bool($field['null']),
 						'AI' => $this->_bool($field['auto_increment'])
 					];
 					array_push($field_rows, $new_row);
 					foreach ($new_row as $key => $val) {
-						$field_width[$key] = max($field_width[$key], strlen($new_row[$key]));
+						$field_width[$key] = max($field_width[$key], strlen(utf8_decode($new_row[$key])));
 					}
 				}
-	            $this->_echo_markdown_rows($field_rows, $field_width);
-	            echo "\r\n";
+	            echo $this->_markdown_table($field_rows, $field_width);
+	            echo "\n";
 	        }
 
 			return true;
@@ -92,6 +96,8 @@ class AdminerDumpMarkdown {
 	/* export table data */
 	function dumpData($table, $style, $query) {
 		if ($_POST["format"] == $this->type) {
+
+			echo "### table data\n\n";
 
 			$connection = connection();
 			$result = $connection->query($query, 1);
@@ -104,25 +110,25 @@ class AdminerDumpMarkdown {
 					switch(true) {
 						case $rn==0:
 							foreach ($row as $key => $val) {
-								$column_width[$key] = strlen($key);
+								$column_width[$key] = strlen(utf8_decode($key));
 							}
 						case $rn<100:
 							$sample_rows[$rn]=$row;
 							foreach ($row as $key => $val) {
-								$column_width[$key] = max($column_width[$key], strlen($row[$key]));
+								$column_width[$key] = max($column_width[$key], strlen(utf8_decode($row[$key])));
 							}
 							break;
 						case $rn==100:
-							$this->_echo_markdown_rows($sample_rows, $column_width);
+							echo $this->_markdown_table($sample_rows, $column_width);
 						default:
-							echo implode(" | ", $this->_map($row, $column_width, " ")) . "\r\n";
+							echo $this->_markdown_row($row, $column_width, " | ", " ") . "\n";
 					}
 					$rn++;
 				}
 				if ($rn<100) {
-					$this->_echo_markdown_rows($sample_rows, $column_width);
+					echo $this->_markdown_table($sample_rows, $column_width);
 				}
-				echo "\r\n";
+				echo "\n";
 			}
 			return true;
 		}
