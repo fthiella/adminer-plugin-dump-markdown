@@ -85,10 +85,9 @@ class AdminerDumpMarkdown {
 						$field_width[$key] = max($field_width[$key], strlen(utf8_decode($new_row[$key])));
 					}
 				}
-	            echo $this->_markdown_table($field_rows, $field_width);
-	            echo "\n";
-	        }
-
+				echo $this->_markdown_table($field_rows, $field_width);
+				echo "\n";
+			}
 			return true;
 		}
 	}
