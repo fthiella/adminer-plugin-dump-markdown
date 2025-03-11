@@ -136,12 +136,13 @@ class AdminerDumpMarkdown {
 							break;
 						case $rn==100:
 							echo $this->_markdown_table($sample_rows, $column_width);
+							break;
 						default:
 							echo $this->_markdown_row($row, $column_width, " | ", " ") . "\n";
 					}
 					$rn++;
 				}
-				if ($rn<100) {
+				if ($rn<=100) {
 					echo $this->_markdown_table($sample_rows, $column_width);
 				}
 				echo "\n";
