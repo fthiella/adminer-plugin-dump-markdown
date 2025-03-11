@@ -15,7 +15,7 @@ class AdminerDumpMarkdown {
 	private $format = 'Markdown';
 
 	private $markdown_chr = [
-		'space' => ':',
+		'space' => ' ',
 		'table' => '|',
 		'header' => '-'
 	];
