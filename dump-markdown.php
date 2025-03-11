@@ -52,6 +52,16 @@ class AdminerDumpMarkdown {
 		return $content;
 	}
 
+	function getAdminerConnection() {
+		if (function_exists('Adminer\connection')) {
+        // Newer Adminer version
+        return Adminer\connection();
+    } elseif (function_exists('connection')) {
+        // Older Adminer version
+        return connection();
+    }
+  }
+
 	function _bool($value) {
 		return $value == 1 ? 'Yes' : 'No';
 	}
@@ -104,7 +114,8 @@ class AdminerDumpMarkdown {
 
 			echo "### table data\n\n";
 
-			$connection = Adminer\connection();
+			$connection = $this->getAdminerConnection();
+
 			$result = $connection->query($query, 1);
 			if ($result) {
 				$rn = 0;
