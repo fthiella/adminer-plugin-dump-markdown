@@ -1,7 +1,7 @@
 <?php
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v0.7 (October 14th, 2020)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v0.8 (March 11th, 2025)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/ 
@@ -13,6 +13,12 @@
 class AdminerDumpMarkdown {
 	private $type = 'markdown';
 	private $format = 'Markdown';
+
+	private $markdown_chr = [
+		'space' => ':',
+		'table' => '|',
+		'header' => '-'
+	];
 
 	function _format_value($s, $l, $c) {
 		return (strlen(utf8_decode($s)) > $l) ? substr($s, 0, $l) : $s.str_repeat($c, $l-strlen(utf8_decode($s)));
@@ -38,10 +44,10 @@ class AdminerDumpMarkdown {
 	}
 
 	function _markdown_table($rows, $column_width) {
-		$content  = $this->_markdown_row($this->_map_header($rows[0]), $column_width, " | ", " ") . "\n";
-		$content .= $this->_markdown_row($this->_map_mtable($rows[0]), $column_width, "-|-", "-") . "\n";
+		$content  = $this->_markdown_row($this->_map_header($rows[0]), $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
+		$content .= $this->_markdown_row($this->_map_mtable($rows[0]), $column_width, $this->markdown_chr['header'] . $this->markdown_chr['table'] . $this->markdown_chr['header'], $this->markdown_chr['header']) . "\n";
 		foreach ($rows as $row) {
-			$content .= $this->_markdown_row($row, $column_width, " | ", " ") . "\n";
+			$content .= $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
 		}
 		return $content;
 	}
@@ -98,7 +104,7 @@ class AdminerDumpMarkdown {
 
 			echo "### table data\n\n";
 
-			$connection = connection();
+			$connection = Adminer\connection();
 			$result = $connection->query($query, 1);
 			if ($result) {
 				$rn = 0;
