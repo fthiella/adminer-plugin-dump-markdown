@@ -202,7 +202,6 @@ class AdminerDumpMarkdown {
                     $row = [];
                     foreach($raw_row as $key => $value) {
                         $row[$key] = $this->_process_value($value);
-                        $row[$key] = $value;
                     }
                     // end process row
                     switch(true) {
