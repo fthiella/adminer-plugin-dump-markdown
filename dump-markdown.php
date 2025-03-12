@@ -39,9 +39,7 @@ class AdminerDumpMarkdown {
         }
 
         if (!$this->mbStrAvailable && !$this->disableUTF8) {
-            echo "> WARNING: The PHP 'mbstring' extension is NOT enabled.\n";
-            echo ">         UTF-8 character handling in Markdown output may be limited.\n";
-            echo ">         Consider enabling 'mbstring' for better UTF-8 support.\n\n";
+            echo "> WARNING: The PHP 'mbstring' extension is NOT enabled. Consider enabling 'mbstring' for better UTF-8 support.\n\n";
         }
     }
 
@@ -66,6 +64,13 @@ class AdminerDumpMarkdown {
         return mb_strlen($value, 'UTF-8');
     }
 
+    function _getStrPos($special, $chr) {
+        if ($this->disableUTF8 || !$this->mbStrAvailable) {
+            return strpos($special, $chr);
+        }
+        return mb_strpos($special, $chr);
+    }
+
     function _getSubString($value, $start, $length) {
         if ($this->disableUTF8 || !$this->mbStrAvailable) {
             return substr($value, $start, $length);
@@ -82,13 +87,14 @@ class AdminerDumpMarkdown {
         }
 
         for ($i = 0; $i < $this->_getStringLength($value); $i++) {
-            $char = $value[$i];
-            if (strpos($this->specialChars, $char) !== false) {
+            $char = $this->_getSubString($value, $i, 1);
+            if ($this->_getStrPos($this->specialChars, $char) !== false) {
                 $escaped_value .= '\\' . $char;
             } else {
                 $escaped_value .= $char;
             }
         }
+
         return $escaped_value;
     }
 
@@ -196,28 +202,30 @@ class AdminerDumpMarkdown {
                     $row = [];
                     foreach($raw_row as $key => $value) {
                         $row[$key] = $this->_process_value($value);
+                        $row[$key] = $value;
                     }
                     // end process row
                     switch(true) {
                         case $rn==0:
-                        foreach ($row as $key => $val) {
-                            $column_width[$key] = $this->_getStringLength($this->_process_value($key)); // escape here?
-                        }
+                            foreach ($row as $key => $val) {
+                                $column_width[$key] = $this->_getStringLength($this->_process_value($key)); // escape here?
+                            }
                         case $rn<$this->rowSampleLimit:
-                        $sample_rows[$rn]=$row;
-                        foreach ($row as $key => $val) {
-                            $column_width[$key] = max($column_width[$key], $this->_getStringLength($row[$key]));
-                        }
-                        break;
+                            $sample_rows[$rn]=$row;
+                            foreach ($row as $key => $val) {
+                                $column_width[$key] = max($column_width[$key], $this->_getStringLength($row[$key]));
+                            }
+                            break;
                         case $rn==$this->rowSampleLimit:
-                        echo $this->_markdown_table($sample_rows, $column_width);
-                        break;
+                            echo $this->_markdown_table($sample_rows, $column_width);
+                            break;
                         default:
-                        echo $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
+                            echo $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
                     }
                     $rn++;
                 }
                 if ($rn<=$this->rowSampleLimit) {
+                    echo print_r($column_width). "\n";
                     echo $this->_markdown_table($sample_rows, $column_width);
                 }
                 echo "\n";
