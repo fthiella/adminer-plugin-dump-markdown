@@ -217,7 +217,6 @@ class AdminerDumpMarkdown {
                             break;
                         case $rn==$this->rowSampleLimit:
                             echo $this->_markdown_table($sample_rows, $column_width);
-                            break;
                         default:
                             echo $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
                     }
@@ -234,7 +233,7 @@ class AdminerDumpMarkdown {
 
     function dumpHeaders($identifier, $multi_table = false) {
         if ($_POST["format"] == $this->type) {
-            header("Content-Type: text/text; charset=utf-8");
+            header("Content-Type: text/markdown; charset=utf-8");
             return "md";
         }
     }
