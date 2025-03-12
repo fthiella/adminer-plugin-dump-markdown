@@ -1,7 +1,7 @@
 <?php
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v0.8 (March 11th, 2025)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v0.9 (March 12th, 2025)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/ 
@@ -11,48 +11,80 @@
  */
 
 class AdminerDumpMarkdown {
-	private $type = 'markdown';
-	private $format = 'Markdown';
+    private $type = 'markdown';
+    private $format = 'Markdown';
 
-	const markdown_chr = [
-		'space' => ' ',
-		'table' => '|',
-		'header' => '-'
-	];
+    private $markdown_chr;
 
-	const rowSampleLimit = 100;
-	const nullValue = "N/D";
+    private $rowSampleLimit;
+    private $nullValue;
 
-    const specialChars = '\\*_[](){}+-#.!|';
+    private $specialChars;
+    private $disableUTF8;
 
-	function _getAdminerConnection() {
-		if (function_exists('Adminer\connection')) {
-			return Adminer\connection();
-        } elseif (function_exists('connection')) {
-            return connection();
+    private $mbStrAvailable;
+
+    function __construct($config = []) {
+        $this->rowSampleLimit = $config['rowSampleLimit'] ?? 100;
+        $this->nullValue = $config['nullValue'] ?? "N/D";
+        $this->specialChars = $config['specialChars'] ?? '\\*_[](){}+-#.!|';
+        $this->markdown_chr = $config['markdown_chr'] ?? ['space'  => ' ', 'table'  => '|', 'header' => '-'];
+        $this->disableUTF8 = $config['disableUTF8'] ?? False;
+
+        if (extension_loaded('mbstring')) {
+            $this->mbStrAvailable = true;
+        } else {
+            $this->mbStrAvailable = false;
+            // also set disableUTF8 to true?
+        }
+
+        if (!$this->mbStrAvailable && !$this->disableUTF8) {
+            echo "> WARNING: The PHP 'mbstring' extension is NOT enabled.\n";
+            echo ">         UTF-8 character handling in Markdown output may be limited.\n";
+            echo ">         Consider enabling 'mbstring' for better UTF-8 support.\n\n";
         }
     }
 
-	function _getAdminerFields($table) {
-		if (function_exists('Adminer\fields')) {
-			return Adminer\fields($table);
-        } elseif (function_exists('fields')) {
-            return fields($table);
+    function _getAdminerConnection() {
+        if (function_exists('Adminer\connection')) {
+            return Adminer\connection();
         }
+        return connection();
+    }
+
+    function _getAdminerFields($table) {
+        if (function_exists('Adminer\fields')) {
+            return Adminer\fields($table);
+        }
+        return fields($table);
+    }
+
+    function _getStringLength($value) {
+        if ($this->disableUTF8 || !$this->mbStrAvailable) {
+            return strlen($value);
+        }
+        return mb_strlen($value, 'UTF-8');
+    }
+
+    function _getSubString($value, $start, $length) {
+        if ($this->disableUTF8 || !$this->mbStrAvailable) {
+            return substr($value, $start, $length);
+        }
+        return mb_substr($value, $start, $length, 'UTF-8');
     }
 
     function _escape_markdown($value) {
-    	$special_chars = '\\*_[](){}+-#.!|';
-    	$escaped_value = "";
+        $escaped_value = "";
 
-    	// I am still undecided how to handle utf8 data. String lenght is not always calculated correctly
-    	$value = strval($value);
-    	// $value = utf8_decode($value);
+        $value = strval($value);
+        if ($this->disableUTF8) {
+            $value = utf8_decode($value);
+        }
 
-        for ($i = 0; $i < strlen($value); $i++) {
+        for ($i = 0; $i < $this->_getStringLength($value); $i++) {
             $char = $value[$i];
-            if (strpos(self::specialChars, $char) !== false) {
-            	$escaped_value .= '\\' . $char;
+            if (strpos($this->specialChars, $char) !== false) {
+                $escaped_value .= '\\' . $char;
             } else {
                 $escaped_value .= $char;
             }
@@ -61,146 +93,144 @@ class AdminerDumpMarkdown {
     }
 
     function _process_value($value) {
-    	if($value === null) {
-    		return self::nullValue;
-    	}
-    	return $this->_escape_markdown($value);
+        if($value === null) {
+            return $this->nullValue;
+        }
+        return $this->_escape_markdown($value);
     }
 
-	function _format_value($s, $l, $c) {
-		return (strlen($s) > $l) ? substr($s, 0, $l) : $s.str_repeat($c, $l-strlen($s));
-	}
+    function _format_value($s, $l, $c) {
+        return ($this->_getStringLength($s) > $l) ? $this->_getSubString($s, 0, $l) : $s.str_repeat($c, $l-$this->_getStringLength($s));
+    }
 
-	function _map($array, $width, $c) {
-		foreach ($array as $k => &$v) $v = $this->_format_value($v, $width[$k], $c);
-		return $array;
-	}
+    function _map($array, $width, $c) {
+        foreach ($array as $k => &$v) $v = $this->_format_value($v, $width[$k], $c);
+        return $array;
+    }
 
-	function _map_header($array) {
-		foreach ($array as $k => &$v) $v = $k;
-		return $array;
-	}
+    function _map_header($array) {
+        foreach ($array as $k => &$v) $v = $k;
+        return $array;
+    }
 
-	function _map_mtable($array) {
-		foreach ($array as $k => &$v) $v = self::markdown_chr['header'];
-		return $array;
-	}
+    function _map_mtable($array) {
+        foreach ($array as $k => &$v) $v = $this->markdown_chr['header'];
+        return $array;
+    }
 
-	function _markdown_row($row, $column_width, $separator, $filler) {
-		return implode($separator, $this->_map($row, $column_width, $filler));
-	}
+    function _markdown_row($row, $column_width, $separator, $filler) {
+        return implode($separator, $this->_map($row, $column_width, $filler));
+    }
 
-	function _markdown_table($rows, $column_width) {
-		$content  = $this->_markdown_row($this->_map_header($rows[0]), $column_width, self::markdown_chr['space'] . self::markdown_chr['table'] . self::markdown_chr['space'], self::markdown_chr['space']) . "\n";
-		$content .= $this->_markdown_row($this->_map_mtable($rows[0]), $column_width, self::markdown_chr['header'] . self::markdown_chr['table'] . self::markdown_chr['header'], self::markdown_chr['header']) . "\n";
-		foreach ($rows as $row) {
-			$content .= $this->_markdown_row($row, $column_width, self::markdown_chr['space'] . self::markdown_chr['table'] . self::markdown_chr['space'], self::markdown_chr['space']) . "\n";
-		}
-		return $content;
-	}
+    function _markdown_table($rows, $column_width) {
+        $content  = $this->_markdown_row($this->_map_header($rows[0]), $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
+        $content .= $this->_markdown_row($this->_map_mtable($rows[0]), $column_width, $this->markdown_chr['header'] . $this->markdown_chr['table'] . $this->markdown_chr['header'], $this->markdown_chr['header']) . "\n";
+        foreach ($rows as $row) {
+            $content .= $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
+        }
+        return $content;
+    }
 
-	function _bool($value) {
-		return $value == 1 ? 'Yes' : 'No';
-	}
+    function _bool($value) {
+        return $value == 1 ? 'Yes' : 'No';
+    }
 
-	function dumpFormat() {
-		return array($this->type => $this->format);
-	}
+    function dumpFormat() {
+        return array($this->type => $this->format);
+    }
 
-	function dumpDatabase($db) {
-		if ($_POST["format"] == $this->format) {
-			echo '# ' . $db . "\n\n";
-			return true;
-		}
-	}
+    function dumpDatabase($db) {
+        if ($_POST["format"] == $this->format) {
+            echo '# ' . $db . "\n\n";
+            return true;
+        }
+    }
 
-//	https://github.com/ToX82/adminer-db-structure-plugin/blob/main/db-structure.php
+    /* export table structure */
+    function dumpTable($table, $style, $is_view = false) {
+        if ($_POST["format"] == $this->type) {
+            echo '## ' . $this->_escape_markdown($table) . "\n\n";
 
-	/* export table structure */
-	function dumpTable($table, $style, $is_view = false) {
-		if ($_POST["format"] == $this->type) {
-			echo '## ' . addcslashes($table, "\n\"\\") . "\n\n";
+            if ($style) {
+                echo "### table structure\n\n";
 
-			if ($style) {
-				echo "### table structure\n\n";
+                $field_rows = array();
+                $field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Null' => 4, 'AI' => 2]);
 
-				$field_rows = array();
-				$field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Null' => 4, 'AI' => 2]);
+                foreach ($this->_getAdminerFields($table) as $field) {
+                    $new_row = [
+                        'Column name' => $field['field'],
+                        'Type' => $field['full_type'],
+                        'Comment' => $field['comment'],
+                        'Null' => $this->_bool($field['null']),
+                        'AI' => $this->_bool($field['auto_increment'])
+                    ];
+                    array_push($field_rows, $new_row);
+                    foreach ($new_row as $key => $val) {
+                        $field_width[$key] = max($field_width[$key], $this->len($this->_escape_markdown($new_row[$key])));
+                    }
+                }
+                echo $this->_markdown_table($field_rows, $field_width);
+                echo "\n";
+            }
+            return true;
+        }
+    }
 
-				foreach ($this->_getAdminerFields($table) as $field) {
-					$new_row = [
-						'Column name' => $field['field'],
-						'Type' => $field['full_type'],
-						'Comment' => $field['comment'],
-						'Null' => $this->_bool($field['null']),
-						'AI' => $this->_bool($field['auto_increment'])
-					];
-					array_push($field_rows, $new_row);
-					foreach ($new_row as $key => $val) {
-						$field_width[$key] = max($field_width[$key], strlen(utf8_decode($new_row[$key]))); // to be fixed
-					}
-				}
-				echo $this->_markdown_table($field_rows, $field_width);
-				echo "\n";
-			}
-			return true;
-		}
-	}
+    /* export table data */
+    function dumpData($table, $style, $query) {
+        if ($_POST["format"] == $this->type) {
 
-	/* export table data */
-	function dumpData($table, $style, $query) {
-		if ($_POST["format"] == $this->type) {
+            echo "### table data\n\n";
 
-			echo "### table data\n\n";
+            $connection = $this->_getAdminerConnection();
 
-			$connection = $this->_getAdminerConnection();
+            $result = $connection->query($query, 1);
+            if ($result) {
+                $rn = 0;
+                $sample_rows = array();
+                $column_width = array();
 
-			$result = $connection->query($query, 1);
-			if ($result) {
-				$rn = 0;
-				$sample_rows = array();
-				$column_width = array();
+                while ($raw_row = $result->fetch_assoc()) {
+                    // process row for output
+                    $row = [];
+                    foreach($raw_row as $key => $value) {
+                        $row[$key] = $this->_process_value($value);
+                    }
+                    // end process row
+                    switch(true) {
+                        case $rn==0:
+                        foreach ($row as $key => $val) {
+                            $column_width[$key] = $this->_getStringLength($this->_process_value($key)); // escape here?
+                        }
+                        case $rn<$this->rowSampleLimit:
+                        $sample_rows[$rn]=$row;
+                        foreach ($row as $key => $val) {
+                            $column_width[$key] = max($column_width[$key], $this->_getStringLength($row[$key]));
+                        }
+                        break;
+                        case $rn==$this->rowSampleLimit:
+                        echo $this->_markdown_table($sample_rows, $column_width);
+                        break;
+                        default:
+                        echo $this->_markdown_row($row, $column_width, $this->markdown_chr['space'] . $this->markdown_chr['table'] . $this->markdown_chr['space'], $this->markdown_chr['space']) . "\n";
+                    }
+                    $rn++;
+                }
+                if ($rn<=$this->rowSampleLimit) {
+                    echo $this->_markdown_table($sample_rows, $column_width);
+                }
+                echo "\n";
+            }
+            return true;
+        }
+    }
 
-				while ($raw_row = $result->fetch_assoc()) {
-					// process row for output
-					$row = [];
-					foreach($raw_row as $key => $value) {
-						$row[$key] = $this->_process_value($value);
-					}
-					// end process row
-					switch(true) {
-						case $rn==0:
-							foreach ($row as $key => $val) {
-								$column_width[$key] = strlen($this->_process_value($key));
-							}
-						case $rn<self::rowSampleLimit:
-							$sample_rows[$rn]=$row;
-							foreach ($row as $key => $val) {
-								$column_width[$key] = max($column_width[$key], strlen($row[$key]));
-							}
-							break;
-						case $rn==self::rowSampleLimit:
-							echo $this->_markdown_table($sample_rows, $column_width);
-							break;
-						default:
-							echo $this->_markdown_row($row, $column_width, self::markdown_chr['space'] . self::markdown_chr['table'] . self::markdown_chr['space'], self::markdown_chr['space']) . "\n";
-					}
-					$rn++;
-				}
-				if ($rn<=self::rowSampleLimit) {
-					echo $this->_markdown_table($sample_rows, $column_width);
-				}
-				echo "\n";
-			}
-			return true;
-		}
-	}
-
-	function dumpHeaders($identifier, $multi_table = false) {
-		if ($_POST["format"] == $this->type) {
-			header("Content-Type: text/text; charset=utf-8");
-			return "md";
-		}
-	}
+    function dumpHeaders($identifier, $multi_table = false) {
+        if ($_POST["format"] == $this->type) {
+            header("Content-Type: text/text; charset=utf-8");
+            return "md";
+        }
+    }
 }
 ?>
