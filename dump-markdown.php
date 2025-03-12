@@ -167,7 +167,7 @@ class AdminerDumpMarkdown {
                     ];
                     array_push($field_rows, $new_row);
                     foreach ($new_row as $key => $val) {
-                        $field_width[$key] = max($field_width[$key], $this->len($this->_escape_markdown($new_row[$key])));
+                        $field_width[$key] = max($field_width[$key], $this->_getStringLength($this->_escape_markdown($new_row[$key])));
                     }
                 }
                 echo $this->_markdown_table($field_rows, $field_width);
