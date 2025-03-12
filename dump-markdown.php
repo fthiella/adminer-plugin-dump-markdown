@@ -225,7 +225,6 @@ class AdminerDumpMarkdown {
                     $rn++;
                 }
                 if ($rn<=$this->rowSampleLimit) {
-                    echo print_r($column_width). "\n";
                     echo $this->_markdown_table($sample_rows, $column_width);
                 }
                 echo "\n";
