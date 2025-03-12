@@ -3,9 +3,9 @@ Adminer Plugin: dump to Markdown format
 
 ## How to use
 
-1. [Download](http://www.adminer.org/#download) and install Adminer tool.
-2. [Download](http://www.adminer.org/plugins/) and install plugin.php
-3. [Download](fthiella/adminer-plugin-dump-markdown) and install dump-markdown.php
+1. [Download](https://www.adminer.org/#download) and install Adminer tool.
+2. [Download](https://raw.github.com/vrana/adminer/master/plugins/plugin.php) and install plugin.php
+3. [Download](https://github.com/fthiella/adminer-plugin-dump-markdown/blob/master/dump-markdown.php) and install dump-markdown.php
 4. create an index.php like the following:
 
 ````

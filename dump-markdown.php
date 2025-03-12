@@ -11,8 +11,8 @@
  */
 
 class AdminerDumpMarkdown {
-	const type = 'markdown';
-	const format = 'Markdown';
+	private $type = 'markdown';
+	private $format = 'Markdown';
 
 	const markdown_chr = [
 		'space' => ' ',
@@ -33,11 +33,21 @@ class AdminerDumpMarkdown {
         }
     }
 
+	function _getAdminerFields($table) {
+		if (function_exists('Adminer\fields')) {
+			return Adminer\fields($table);
+        } elseif (function_exists('fields')) {
+            return fields($table);
+        }
+    }
+
     function _escape_markdown($value) {
     	$special_chars = '\\*_[](){}+-#.!|';
     	$escaped_value = "";
+
+    	// I am still undecided how to handle utf8 data. String lenght is not always calculated correctly
     	$value = strval($value);
-    	$value = utf8_decode($value);
+    	// $value = utf8_decode($value);
 
         for ($i = 0; $i < strlen($value); $i++) {
             $char = $value[$i];
@@ -94,19 +104,21 @@ class AdminerDumpMarkdown {
 	}
 
 	function dumpFormat() {
-		return array(self::type => self::format);
+		return array($this->type => $this->format);
 	}
 
 	function dumpDatabase($db) {
-		if ($_POST["format"] == self::type) {
+		if ($_POST["format"] == $this->format) {
 			echo '# ' . $db . "\n\n";
 			return true;
 		}
 	}
 
+//	https://github.com/ToX82/adminer-db-structure-plugin/blob/main/db-structure.php
+
 	/* export table structure */
 	function dumpTable($table, $style, $is_view = false) {
-		if ($_POST["format"] == self::type) {
+		if ($_POST["format"] == $this->type) {
 			echo '## ' . addcslashes($table, "\n\"\\") . "\n\n";
 
 			if ($style) {
@@ -115,7 +127,7 @@ class AdminerDumpMarkdown {
 				$field_rows = array();
 				$field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Null' => 4, 'AI' => 2]);
 
-				foreach (fields($table) as $field) {
+				foreach ($this->_getAdminerFields($table) as $field) {
 					$new_row = [
 						'Column name' => $field['field'],
 						'Type' => $field['full_type'],
@@ -125,7 +137,7 @@ class AdminerDumpMarkdown {
 					];
 					array_push($field_rows, $new_row);
 					foreach ($new_row as $key => $val) {
-						$field_width[$key] = max($field_width[$key], strlen($new_row[$key]));
+						$field_width[$key] = max($field_width[$key], strlen(utf8_decode($new_row[$key]))); // to be fixed
 					}
 				}
 				echo $this->_markdown_table($field_rows, $field_width);
@@ -137,7 +149,7 @@ class AdminerDumpMarkdown {
 
 	/* export table data */
 	function dumpData($table, $style, $query) {
-		if ($_POST["format"] == self::type) {
+		if ($_POST["format"] == $this->type) {
 
 			echo "### table data\n\n";
 
@@ -167,7 +179,7 @@ class AdminerDumpMarkdown {
 								$column_width[$key] = max($column_width[$key], strlen($row[$key]));
 							}
 							break;
-						case $rn==self::$rowSampleLimit:
+						case $rn==self::rowSampleLimit:
 							echo $this->_markdown_table($sample_rows, $column_width);
 							break;
 						default:
@@ -185,7 +197,7 @@ class AdminerDumpMarkdown {
 	}
 
 	function dumpHeaders($identifier, $multi_table = false) {
-		if ($_POST["format"] == self::type) {
+		if ($_POST["format"] == $this->type) {
 			header("Content-Type: text/text; charset=utf-8");
 			return "md";
 		}
