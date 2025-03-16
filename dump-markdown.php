@@ -47,14 +47,14 @@ class AdminerDumpMarkdown {
         if (function_exists('Adminer\connection')) {
             return Adminer\connection();
         }
-        return connection();
+        return Adminer\connection();
     }
 
     function _getAdminerFields($table) {
         if (function_exists('Adminer\fields')) {
             return Adminer\fields($table);
         }
-        return fields($table);
+        return Adminer\fields($table);
     }
 
     function _getStringLength($value) {
@@ -238,4 +238,3 @@ class AdminerDumpMarkdown {
         }
     }
 }
-?>
