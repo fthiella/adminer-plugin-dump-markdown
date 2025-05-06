@@ -43,20 +43,6 @@ class AdminerDumpMarkdown {
         }
     }
 
-    function _getAdminerConnection() {
-        if (function_exists('Adminer\connection')) {
-            return Adminer\connection();
-        }
-        return Adminer\connection();
-    }
-
-    function _getAdminerFields($table) {
-        if (function_exists('Adminer\fields')) {
-            return Adminer\fields($table);
-        }
-        return Adminer\fields($table);
-    }
-
     function _getStringLength($value) {
         if ($this->disableUTF8 || !$this->mbStrAvailable) {
             return strlen($value);
@@ -147,7 +133,7 @@ class AdminerDumpMarkdown {
 
     function dumpDatabase($db) {
         if ($_POST["format"] == $this->format) {
-            echo '# ' . $db . "\n\n";
+            echo '# ' . $this->_escape_markdown($db) . "\n\n";
             return true;
         }
     }
@@ -163,7 +149,7 @@ class AdminerDumpMarkdown {
                 $field_rows = array();
                 $field_width = (['Column name' => 11, 'Type' => 4, 'Comment' => 7, 'Null' => 4, 'AI' => 2]);
 
-                foreach ($this->_getAdminerFields($table) as $field) {
+                foreach (Adminer\fields($table) as $field) {
                     $new_row = [
                         'Column name' => $this->_process_value($field['field']),
                         'Type' => $field['full_type'],
@@ -186,10 +172,9 @@ class AdminerDumpMarkdown {
     /* export table data */
     function dumpData($table, $style, $query) {
         if ($_POST["format"] == $this->type) {
+            echo "### Table Data\n\n";
 
-            echo "### table data\n\n";
-
-            $connection = $this->_getAdminerConnection();
+            $connection = Adminer\connection();
 
             $result = $connection->query($query, 1);
             if ($result) {
