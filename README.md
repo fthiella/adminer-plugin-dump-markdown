@@ -22,14 +22,18 @@ function adminer_object() {
     }
 
     $plugins = array(
-        // specify enabled plugins here
         new AdminerDumpMarkdown([
-              // optional parameters
               'rowSampleLimit' => 100,
-              'nullValue' => 'N/D',
-              'disableUTF8' => False,
-              'specialChars' => '\\*_[](){}+-#.!|',
-              'markdown_chr' => ['space'  => ' ', 'table'  => '|', 'header' => '-']
+              'nullValue'      => 'N/D',
+              'tablePipes'     => false,
+              'tableAlign'     => false,
+              'specialChars'   => '\\*_[](){}+-#\!|', // Dot removed to keep decimals clean
+              'columnAlign'    => ['id' => 'center'], // Ignored if tableAlign is false
+              'typeAlign'      => [
+                  'number'  => 'right',
+                  'bool'    => 'center',
+                  'default' => 'left'
+              ]
             ]),
     );
 
@@ -78,7 +82,7 @@ Specifies the maximum number of rows to sample from each table when determining 
 
 Defines the string to be used in the Markdown output to represent NULL database values.
 
-### specialChars (string, optional, default: "\\\*\_\[\]\(\)\{\}\+\-\#\.\!\|")
+### specialChars (string, optional, default: "\\\*\_\[\]\(\)\{\}\+\-\#\!\|")
 
 Defines the set of special Markdown characters that will be escaped with a backslash (\\) in the output.
 
@@ -94,6 +98,23 @@ Allows you to customize the characters used for Markdown table formatting:
 
 - `disableUTF8: False` (Default - Recommended): the plugin handles UTF-8 encoded data correctly, if the mbstring PHP extension is available
 - `disableUTF8: True`  When set to true, the plugin performs a lossy conversion of UTF-8 text data to ISO-8859-1 encoding
+
+### tablePipes (boolean, optional, default: false):
+
+When true, wraps tables with leading and trailing pipes (|).
+
+### tableAlign (bool, optional, default: false):
+
+When true, includes alignment markers (:---) in the separator row. When false all
+columns are aligned to left.
+
+#### Alignment Control
+
+- `typeAlign` (array): Defines default alignment based on data types.
+    number: defaults to right.
+    bool: defaults to center.
+    default: defaults to left (for text, varchars, dates, etc.).
+- `columnAlign` (array): Manual override for specific columns. Example: `'column_name' => 'center'`
 
 ## Notes
 
