@@ -1,7 +1,7 @@
 <?php
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v0.9 (March 12th, 2025)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v1.0 (March 4th, 2026)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/ 
@@ -132,7 +132,7 @@ class AdminerDumpMarkdown {
     }
 
     function dumpDatabase($db) {
-        if ($_POST["format"] == $this->format) {
+        if ($_POST["format"] == $this->type) {
             echo '# ' . $this->_escape_markdown($db) . "\n\n";
             return true;
         }

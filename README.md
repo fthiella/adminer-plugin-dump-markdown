@@ -25,8 +25,8 @@ function adminer_object() {
         // specify enabled plugins here
         new AdminerDumpMarkdown([
               // optional parameters
-              'rowSampleLimit' => 50,
-              'nullValue' => '(null)',
+              'rowSampleLimit' => 100,
+              'nullValue' => 'N/D',
               'disableUTF8' => False,
               'specialChars' => '\\*_[](){}+-#.!|',
               'markdown_chr' => ['space'  => ' ', 'table'  => '|', 'header' => '-']
@@ -43,7 +43,7 @@ function adminer_object() {
 }
 
 // include original Adminer or Adminer Editor
-include "./adminer-4.3.1-en.php";
+include "./adminer-5.4.2-en.php";
 ?>
 ```
 
