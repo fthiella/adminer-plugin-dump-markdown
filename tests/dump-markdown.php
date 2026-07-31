@@ -3,13 +3,12 @@
 declare(strict_types=1);
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v1.2 (July 31th, 2026)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v1.2.0 (July 29th, 2026)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/
  * @license http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0
  * @license http://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
- *
  */
 
 /**
@@ -17,39 +16,30 @@ declare(strict_types=1);
  */
 class AdminerDumpMarkdown
 {
-    /** @var string */
-    private $type = 'markdown';
-    /** @var string */
-    private $format = 'Markdown';
+    private string $type = 'markdown';
+    private string $format = 'Markdown';
 
     /** @var array<string,string> Characters used to build Markdown tables. */
-    private $markdownChr;
+    private array $markdownChr;
 
-    /** @var int */
-    private $rowSampleLimit;
-    /** @var string */
-    private $nullValue;
+    private int $rowSampleLimit;
+    private string $nullValue;
 
-    /** @var string */
-    private $specialChars;
-    /** @var bool */
-    private $disableUTF8;
-    /** @var bool */
-    private $mbStrAvailable;
+    private string $specialChars;
+    private bool $disableUTF8;
+    private bool $mbStrAvailable;
 
-    /** @var bool */
-    private $tableAlign;
-    /** @var bool */
-    private $tablePipes;
+    private bool $tableAlign;
+    private bool $tablePipes;
 
     /** @var array<string,string> Per-column alignment overrides, keyed by column name. */
-    private $columnAlign;
+    private array $columnAlign;
 
     /** @var array<string,string> Default alignment per inferred data type. */
-    private $typeAlign;
+    private array $typeAlign;
 
     /** @var array<string,array<string,mixed>> Field metadata for the table currently being dumped. */
-    private $fields = [];
+    private array $fields = [];
 
     /**
      * @param array<string,mixed> $config {
@@ -86,6 +76,9 @@ class AdminerDumpMarkdown
         $this->mbStrAvailable = extension_loaded('mbstring');
 
         if (!$this->mbStrAvailable && !$this->disableUTF8) {
+            // Use error_log() rather than echo: this constructor can run before
+            // dumpHeaders() sends the Content-Type header, and any prior output
+            // would trigger a "headers already sent" warning.
             error_log("AdminerDumpMarkdown: the PHP 'mbstring' extension is not enabled; falling back to byte-based string handling. Enable 'mbstring' for correct UTF-8 support.");
         }
     }
@@ -98,10 +91,7 @@ class AdminerDumpMarkdown
         return mb_strlen($value, 'UTF-8');
     }
 
-    /**
-     * @return int|false
-     */
-    private function getStrPos(string $haystack, string $needle)
+    private function getStrPos(string $haystack, string $needle): int|false
     {
         if ($this->disableUTF8 || !$this->mbStrAvailable) {
             return strpos($haystack, $needle);
@@ -127,10 +117,7 @@ class AdminerDumpMarkdown
         return $converted !== false ? $converted : $value;
     }
 
-    /**
-     * @param string|int|float|bool $value
-     */
-    private function escapeMarkdown($value): string
+    private function escapeMarkdown(string|int|float|bool $value): string
     {
         $escapedValue = '';
 
@@ -152,10 +139,7 @@ class AdminerDumpMarkdown
         return $escapedValue;
     }
 
-    /**
-     * @param mixed $value
-     */
-    private function processValue($value): string
+    private function processValue(mixed $value): string
     {
         if ($value === null) {
             return $this->nullValue;
@@ -202,7 +186,7 @@ class AdminerDumpMarkdown
             // contains the substring 'int', so a tinyint(1) boolean column
             // would otherwise always match the numeric branch first and
             // never be centered as a boolean.
-            if ($type === 'boolean' || ($type === 'tinyint' && strpos($this->fields[$colName]['full_type'], '(1)') !== false)) {
+            if ($type === 'boolean' || ($type === 'tinyint' && str_contains($this->fields[$colName]['full_type'], '(1)'))) {
                 return $this->typeAlign['bool'];
             }
             if (preg_match('/int|float|double|decimal|numeric|real|bit/', $type)) {
@@ -293,10 +277,7 @@ class AdminerDumpMarkdown
         return $content;
     }
 
-    /**
-     * @param mixed $value
-     */
-    private function bool($value): string
+    private function bool(mixed $value): string
     {
         return $value == 1 ? 'Yes' : 'No';
     }
@@ -318,10 +299,7 @@ class AdminerDumpMarkdown
         return null;
     }
 
-    /**
-     * @param bool|string $style
-     */
-    public function dumpTable(string $table, $style, bool $is_view = false): ?bool
+    public function dumpTable(string $table, bool|string $style, bool $is_view = false): ?bool
     {
         if (($_POST['format'] ?? null) !== $this->type) {
             return null;
@@ -361,10 +339,7 @@ class AdminerDumpMarkdown
         return true;
     }
 
-    /**
-     * @param bool|string $style
-     */
-    public function dumpData(string $table, $style, string $query): ?bool
+    public function dumpData(string $table, bool|string $style, string $query): ?bool
     {
         if (($_POST['format'] ?? null) !== $this->type) {
             return null;
@@ -446,7 +421,10 @@ class AdminerDumpMarkdown
     }
 
     /**
-     * Thin wrapper around header().
+     * Thin wrapper around header(). header() is a no-op under the CLI SAPI
+     * (headers_sent() is always true there), so this seam lets tests verify
+     * the call by overriding it in a subclass instead of relying on
+     * headers_list().
      */
     protected function sendHeader(string $header): void
     {

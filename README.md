@@ -3,6 +3,11 @@
 This plugin enhances Adminer by adding a "Markdown" export format, allowing you
 to dump database structure and data into Markdown-formatted text files (`.md`).
 
+## Requirements
+
+- PHP 7.2 or later.
+- The `mbstring` extension is recommended (not required) for correct UTF-8 handling; without it the plugin falls back to byte-based string operations. See [Notes](#notes).
+
 ## Installation
 
 1. [Download](https://www.adminer.org/#download) and install Adminer tool.
@@ -82,7 +87,7 @@ Specifies the maximum number of rows to sample from each table when determining 
 
 Defines the string to be used in the Markdown output to represent NULL database values.
 
-### specialChars (string, optional, default: "\\\*\_\[\]\(\)\{\}\+\-\#\!\|")
+### specialChars (string, optional, default: `\*_[](){}+-#\!|`)
 
 Defines the set of special Markdown characters that will be escaped with a backslash (\\) in the output.
 
@@ -115,6 +120,20 @@ columns are aligned to left.
     bool: defaults to center.
     default: defaults to left (for text, varchars, dates, etc.).
 - `columnAlign` (array): Manual override for specific columns. Example: `'column_name' => 'center'`
+
+## Testing
+
+The plugin has a PHPUnit test suite covering Markdown escaping, column
+alignment/padding, generated table output, and the public methods Adminer
+calls. To run it:
+
+```
+phpunit
+```
+
+from the repository root (requires PHPUnit 10+, since the suite uses PHP 8
+attributes for data providers; `phpunit.xml` and the `tests/` directory
+are included in the repository).
 
 ## Notes
 
