@@ -3,6 +3,19 @@
 This plugin enhances Adminer by adding a "Markdown" export format, allowing you
 to dump database structure and data into Markdown-formatted text files (`.md`).
 
+## Features
+
+For each dumped database, the plugin outputs:
+
+- A **table of contents** with anchor links to each table.
+- For each table, the **structure** (columns, types, comments, nullability,
+  auto-increment), followed by its **indexes** and **foreign keys**, each as
+  its own Markdown table.
+- The table **data**, sampled up to `rowSampleLimit` rows to compute column
+  widths, then streamed for larger tables.
+- If a query fails, an inline `> ERROR: query failed: ...` note instead of a
+  silently empty section.
+
 ## Requirements
 
 - PHP 7.2 or later.
@@ -10,10 +23,64 @@ to dump database structure and data into Markdown-formatted text files (`.md`).
 
 ## Installation
 
-1. [Download](https://www.adminer.org/#download) and install Adminer tool.
-2. [Download](https://raw.github.com/vrana/adminer/master/plugins/plugin.php) and install plugin.php
-3. [Download](https://github.com/fthiella/adminer-plugin-dump-markdown/blob/master/dump-markdown.php) and install dump-markdown.php
-4. create an index.php like the following:
+### For Adminer 6.0.0 and newer
+
+Adminer 6.0.0 introduced a new, simpler plugin system based on the `adminer-plugins/` folder.
+ 
+1. [Download](https://www.adminer.org/#download) and install Adminer (e.g., `adminer-6.0.0-en.php`).
+
+2. Download `dump-markdown.php` from this repository and place it in the `adminer-plugins/` directory (create it if it doesn't exist), next to your Adminer file.
+
+3. **Optional - configure the plugin**:   
+ Create an `adminer-plugins.php` file in the same folder as Adminer:
+
+   ```php
+   <?php // adminer-plugins.php
+
+   return array(
+       new AdminerDumpMarkdown([
+           'rowSampleLimit' => 100,
+           'nullValue'      => 'N/D',
+           'disableUTF8'     => false,
+           'markdown_chr' => ['space' => ' ', 'table' => '|', 'header' => '-'],
+           'specialChars'   => '\*[](){+-#\!|',
+           'tableAlign'     => true,
+           'tablePipes'     => false,
+           'typeAlign'      => [
+               'number' => 'right',
+               'bool'   => 'center',
+               'default' => 'left'
+           ]
+       )]),
+   );
+   ```
+
+   If you omit this file, the plugin will use its default settings.
+
+4. Your `index.php` can be minimal:
+
+   ```php
+   <?php
+   include "./adminer-6.0.0-en.php";
+   ?>
+   ```
+
+Adminer 6.0.0 will automatically detect and configure the plugin from the `adminer-plugins/` folder and, if present,
+apply the configuration from `adminer-plugins.php`.
+
+---
+
+### For Adminer 5.x and older
+
+If you're using an older version of Adminer (5.x or below), follow the classic approach:
+
+1. [Download](https://www.adminer.org/#download) and install Adminer.
+
+2. [Download](https://raw.github.com/vrana/adminer/master/plugins/plugin.php) and place `plugin.php` in your `plugins/` folder.
+
+3. Download `dump-markdown.php` from this repository and place it in the same `plugins/` folder.
+
+4. Create an `index.php` like the following:
 
 ```php
 <?php
@@ -28,48 +95,33 @@ function adminer_object() {
 
     $plugins = array(
         new AdminerDumpMarkdown([
-              'rowSampleLimit' => 100,
-              'nullValue'      => 'N/D',
-              'tablePipes'     => false,
-              'tableAlign'     => false,
-              'specialChars'   => '\\*_[](){}+-#\!|', // Dot removed to keep decimals clean
-              'columnAlign'    => ['id' => 'center'], // Ignored if tableAlign is false
-              'typeAlign'      => [
-                  'number'  => 'right',
-                  'bool'    => 'center',
-                  'default' => 'left'
-              ]
-            ]),
+            'rowSampleLimit' => 100,
+            'nullValue'      => 'N/D',
+            'tablePipes'     => false,
+            'tableAlign'     => false,
+            'specialChars'   => '\*[](){+-#\!|',
+            'columnAlign'    => ['id' => 'center'],
+            'typeAlign'      => [
+                'number'  => 'right',
+                'bool'    => 'center',
+                'default' => 'left'
+            ]
+        ]),
     );
-
-    /* It is possible to combine customization and plugins:
-    class AdminerCustomization extends AdminerPlugin {
-    }
-    return new AdminerCustomization($plugins);
-    */
 
     return new AdminerPlugin($plugins);
 }
 
 // include original Adminer or Adminer Editor
-include "./adminer-5.4.2-en.php";
+include "./adminer-5.5.1-en.php";
 ?>
-```
-
-File structure has to be like the following one:
-```
-- plugins
-    - plugin.php
-    - dump-markdown.php
-    - ...
-- adminer.php
-- index.php
 ```
 
 ## Configuration Options
 
 The `adminer-plugin-dump-markdown` plugin can be configured using optional parameters passed
-to the `AdminerDumpMarkdown` class constructor in your `index.php` file:
+to the `AdminerDumpMarkdown` class constructor in your `index.php` file (Adminer 5.x)
+or in `adminer-plugins.php` (Adminer 6.0.0):
 
 ```php
 new AdminerDumpMarkdown([
@@ -89,7 +141,10 @@ Defines the string to be used in the Markdown output to represent NULL database 
 
 ### specialChars (string, optional, default: `\*_[](){}+-#\!|`)
 
-Defines the set of special Markdown characters that will be escaped with a backslash (\\) in the output.
+Defines the set of special Markdown characters that will be escaped with a backslash (\) in the output.
+
+Note: the default includes _ for maximum compatibility with older/non-standard Markdown parsers,
+but can be omitted for better readability.
 
 ### markdown_chr (array, optional, default: ['space' => ' ', 'table' => '|', 'header' => '-']):
 
@@ -112,6 +167,16 @@ When true, wraps tables with leading and trailing pipes (|).
 
 When true, includes alignment markers (:---) in the separator row. When false all
 columns are aligned to left.
+
+### truncationMarker (string, optional, default: "" - empty):
+
+When a value is longer than its column's width (as computed from the
+sampled rows), it gets cut to fit:
+
+- By default this happens silently;
+- Set this to a short string (e.g. `'~'` or `'...'`) to mark truncated
+  values instead (e.g. `"exampl~"` instead of `"example"`).
+  It's UTF-8 safe.
 
 #### Alignment Control
 

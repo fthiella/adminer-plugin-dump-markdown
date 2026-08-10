@@ -23,7 +23,7 @@ final class TableRenderingTest extends TestCase
 
         $expected = <<<'MD'
 id | name 
--- | -----
+---|------
 1  | Alice
 2  | Bob  
 
@@ -40,7 +40,7 @@ MD;
 
         $expected = <<<'MD'
 | id | name  |
-| -- | ----- |
+|----|-------|
 | 1  | Alice |
 
 MD;
@@ -60,7 +60,7 @@ MD;
 
         $this->assertSame('id | name  | active', $lines[0]);
         // right: dashes then colon; left: colon then dashes; center: colon-dashes-colon
-        $this->assertSame('-: | :---- | :----:', $lines[1]);
+        $this->assertSame('--:|:------|:-----:', $lines[1]);
     }
 
     public function testTableWithPipesAndAlignmentCombined(): void
@@ -75,7 +75,7 @@ MD;
 
         $expected = <<<'MD'
 | id | name  | active |
-| -: | :---- | :----: |
+|---:|:------|:------:|
 |  1 | Alice |  Yes   |
 
 MD;
@@ -83,12 +83,70 @@ MD;
         $this->assertSame($expected, $this->callPrivateMethod($plugin, 'markdownTable', [$rows, $widths, $aligns]));
     }
 
+    public function testSeparatorPipesLineUpVerticallyWithHeaderPipes(): void
+    {
+        // The property that actually matters: dashes fill the space that
+        // would otherwise be blank padding, but the pipe *positions* in the
+        // separator row must still land exactly where they do in the header
+        // row above it, whatever the column count or tablePipes/tableAlign
+        // combination. Checking character offsets directly, rather than a
+        // fixed string, makes this resilient to width/column changes.
+        $plugin = new AdminerDumpMarkdown(['tableAlign' => true, 'tablePipes' => true]);
+        $rows = [['a' => '1', 'bb' => '22', 'ccc' => '333', 'dddd' => '4444']];
+        $widths = ['a' => 4, 'bb' => 9, 'ccc' => 2, 'dddd' => 15];
+        $aligns = ['a' => 'left', 'bb' => 'right', 'ccc' => 'center', 'dddd' => 'left'];
+
+        $result = $this->callPrivateMethod($plugin, 'markdownTable', [$rows, $widths, $aligns]);
+        [$headerLine, $sepLine] = explode("\n", $result, 3);
+
+        $pipePositions = function (string $line): array {
+            $positions = [];
+            foreach (str_split($line) as $i => $char) {
+                if ($char === '|') {
+                    $positions[] = $i;
+                }
+            }
+            return $positions;
+        };
+
+        $this->assertSame($pipePositions($headerLine), $pipePositions($sepLine));
+    }
+
+    public function testSeparatorPipesLineUpVerticallyWithoutTablePipes(): void
+    {
+        // Same property, but for the no-outer-wrap case, where only the
+        // interior " | " joins need compensating, not the (nonexistent)
+        // leading/trailing wrap.
+        $plugin = new AdminerDumpMarkdown(['tableAlign' => false, 'tablePipes' => false]);
+        $rows = [['a' => '1', 'bb' => '22', 'ccc' => '333']];
+        $widths = ['a' => 4, 'bb' => 9, 'ccc' => 2];
+
+        $result = $this->callPrivateMethod($plugin, 'markdownTable', [$rows, $widths, []]);
+        [$headerLine, $sepLine] = explode("\n", $result, 3);
+
+        $pipePositions = function (string $line): array {
+            $positions = [];
+            foreach (str_split($line) as $i => $char) {
+                if ($char === '|') {
+                    $positions[] = $i;
+                }
+            }
+            return $positions;
+        };
+
+        $this->assertSame($pipePositions($headerLine), $pipePositions($sepLine));
+    }
+
     public function testEmptyRowsProducesEmptyStringInsteadOfErroring(): void
     {
         // Regression test: rowSampleLimit = 0 (or a table with zero rows) used
         // to reach into $rows[0] for the header even when $rows was empty.
         $plugin = new AdminerDumpMarkdown();
-        $this->assertSame('', $this->callPrivateMethod($plugin, 'markdownTable', [[], [], []]));
+        $expected = <<<'MD'
+> No data found in table.
+
+MD;
+        $this->assertSame($expected, $this->callPrivateMethod($plugin, 'markdownTable', [[], [], []]));
     }
 
     public function testMarkdownRowEscapesAndPadsEachCellIndependently(): void
