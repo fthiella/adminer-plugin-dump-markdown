@@ -168,4 +168,47 @@ MD;
         $header = $this->callPrivateMethod($plugin, 'mapHeader', [['weird*col' => 'x']]);
         $this->assertSame(['weird*col' => 'weird\\*col'], $header);
     }
+
+    public function testCompactTableWithoutPipesOrAlignment(): void
+    {
+        $plugin = new AdminerDumpMarkdown(['compact' => true]);
+        $rows = [
+            ['id' => '1', 'name' => 'Alice'],
+            ['id' => '2', 'name' => 'Bob'],
+        ];
+        $widths = ['id' => 2, 'name' => 5];
+        $expected = <<<'MD'
+id | name
+--- | ---
+1 | Alice
+2 | Bob
+
+MD;
+
+        $this->assertSame($expected, $this->callPrivateMethod($plugin, 'markdownTable', [$rows, $widths, []]));
+    }
+
+    public function testCompactTableWithPipesAndAllAlignments(): void
+    {
+        $plugin = new AdminerDumpMarkdown([
+            'compact' => true,
+            'tablePipes' => true,
+            'tableAlign' => true,
+        ]);
+        $rows = [
+            ['id' => '1', 'name' => 'Alice', 'active' => 'Yes'],
+        ];
+        $widths = ['id' => 2, 'name' => 5, 'active' => 6];
+        $aligns = ['id' => 'right', 'name' => 'left', 'active' => 'center'];
+
+        $expected = <<<'MD'
+| id | name | active |
+| --: | :-- | :-: |
+| 1 | Alice | Yes |
+
+MD;
+
+        $this->assertSame($expected, $this->callPrivateMethod($plugin, 'markdownTable', [$rows, $widths, $aligns]));
+    }
+
 }

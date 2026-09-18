@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /*
- * AdminerDumpMarkdown - dump to MARKDOWN format v1.3 (August 10th, 2026)
+ * AdminerDumpMarkdown - dump to MARKDOWN format v1.5 (September 18th, 2026)
  *
  * @link https://github.com/fthiella/adminer-plugin-dump-markdown
  * @author Federico Thiella, https://fthiella.github.io/
@@ -11,9 +11,14 @@ declare(strict_types=1);
  * @license http://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
  */
 
+if (class_exists('AdminerDumpMarkdown', false)) {
+    return;
+}
+
 /**
  * Adminer plugin that dumps database structure and data as Markdown tables.
  */
+
 class AdminerDumpMarkdown
 {
     /** @var string */
@@ -40,6 +45,8 @@ class AdminerDumpMarkdown
     private $tableAlign;
     /** @var bool */
     private $tablePipes;
+    /** @var bool */
+    private $compact;
 
     /** @var array<string,string> Per-column alignment overrides, keyed by column name. */
     private $columnAlign;
@@ -56,46 +63,54 @@ class AdminerDumpMarkdown
     /** @var string Appended to values that get truncated to fit a column's width. Empty string means truncate silently (default, preserves pre-1.2.3 behavior). Must be shorter than the column width to take effect. */
     private $truncationMarker;
 
+    /** @var bool Whether POST export-form options have already been applied this request. */
+    private $optionsApplied = false;
+
+    /** @var array<string,int> Counter for duplicate slugs, to ensure unique anchor IDs in the table of contents. */
+    private $generatedSlugs = [];
+
+    /** @var string|null */
+    private $fieldsTable = null;
+
     /**
      * @param array<string,mixed> $config {
-     *     @type int    $rowSampleLimit Number of rows buffered to compute column widths before streaming. Default 100.
+     *     @type int    $rowSampleLimit Number of rows buffered to compute column widths before streaming. Default 100. Ignored when $compact is true.
      *     @type string $nullValue      Placeholder text for NULL values. Default "N/D".
      *     @type string $specialChars   Characters escaped in Markdown output.
      *     @type array  $markdown_chr   Overrides for the space/table/header characters.
      *     @type bool   $disableUTF8    Disable multibyte-safe string handling.
      *     @type bool   $tableAlign     Enable column-alignment markers in the separator row.
      *     @type bool   $tablePipes     Wrap rows in leading/trailing pipes.
+     *     @type bool   $compact        Skip cell padding; still emit left/center/right markers if $tableAlign is on.
      *     @type array  $columnAlign    Per-column alignment overrides.
      *     @type array  $typeAlign      Default alignment per data type ('number', 'bool', 'default').
-     *     @type string $truncationMarker Appended to values truncated to fit a column's width (e.g. "~", "..."). Default "" (silent truncation, no marker). Ignored for a given cell if it doesn't fit within that column's width.
+     *     @type string $truncationMarker Appended to values truncated to fit a column's width. Ignored when $compact is true.
      * }
      */
     public function __construct(array $config = [])
     {
-        $this->rowSampleLimit = $config['rowSampleLimit'] ?? 100;
-        $this->nullValue = $config['nullValue'] ?? 'N/D';
-
-        $this->specialChars = $config['specialChars'] ?? '\\*_[](){}+-#\!|';
-        $this->markdownChr = $config['markdown_chr'] ?? ['space' => ' ', 'table' => '|', 'header' => '-'];
-        $this->disableUTF8 = $config['disableUTF8'] ?? false;
+        $this->rowSampleLimit = max(1, (int) ($config['rowSampleLimit'] ?? 100));
+        $this->nullValue = (string) ($config['nullValue'] ?? 'N/D');
+        $this->specialChars = (string) ($config['specialChars'] ?? '\\*|');
+        $this->disableUTF8 = (bool) ($config['disableUTF8'] ?? false);
         $this->truncationMarker = (string) ($config['truncationMarker'] ?? '');
+        $this->tableAlign = (bool) ($config['tableAlign'] ?? false);
+        $this->tablePipes = (bool) ($config['tablePipes'] ?? false);
+        $this->compact = (bool) ($config['compact'] ?? false);
 
-        $this->tableAlign = $config['tableAlign'] ?? false;
-        $this->tablePipes = $config['tablePipes'] ?? false;
-        $this->columnAlign = $config['columnAlign'] ?? [];
+        $defaultChr = ['space' => ' ', 'table' => '|', 'header' => '-'];
+        $passedChr = is_array($config['markdown_chr'] ?? null) ? $config['markdown_chr'] : [];
+        $this->markdownChr = array_merge($defaultChr, array_intersect_key($passedChr, $defaultChr));
 
-        $this->typeAlign = $config['typeAlign'] ?? [
-            'number' => 'right',
-            'bool' => 'center',
-            'default' => 'left',
-        ];
+        $this->columnAlign = is_array($config['columnAlign'] ?? null) ? $config['columnAlign'] : [];
+
+        $defaultTypeAlign = ['number' => 'right', 'bool' => 'center', 'default' => 'left'];
+        $passedTypeAlign = is_array($config['typeAlign'] ?? null) ? $config['typeAlign'] : [];
+        $this->typeAlign = array_merge($defaultTypeAlign, array_intersect_key($passedTypeAlign, $defaultTypeAlign));
 
         $this->mbStrAvailable = extension_loaded('mbstring');
 
         if (!$this->mbStrAvailable && !$this->disableUTF8) {
-            // Use error_log() rather than echo: this constructor can run before
-            // dumpHeaders() sends the Content-Type header, and any prior output
-            // would trigger a "headers already sent" warning.
             error_log("AdminerDumpMarkdown: the PHP 'mbstring' extension is not enabled; falling back to byte-based string handling. Enable 'mbstring' for correct UTF-8 support.");
         }
     }
@@ -122,6 +137,9 @@ class AdminerDumpMarkdown
      */
     private function toLegacyEncoding(string $value): string
     {
+        if (!function_exists('iconv')) {
+            return $value;
+        }
         $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT//IGNORE', $value);
         return $converted !== false ? $converted : $value;
     }
@@ -135,19 +153,15 @@ class AdminerDumpMarkdown
         if ($this->disableUTF8) {
             $value = $this->toLegacyEncoding($value);
         }
+        if ($this->specialChars === '') {
+            return strval($value);
+        }
 
         $escaped = preg_quote($this->specialChars, '/');
-        // Drop the 'u' modifier when using legacy (non-UTF-8) encoding
         $modifier = $this->disableUTF8 ? '' : 'u';
 
         $result = preg_replace('/([' . $escaped . '])/' . $modifier, '\\\$1', $value);
 
-        // preg_replace() returns null on malformed input (e.g. invalid UTF-8
-        // bytes with the 'u' modifier). Falling back to the unescaped
-        // original would let raw Markdown syntax characters through and
-        // corrupt the table, so fall back to a byte-safe manual escape
-        // instead, which works regardless of encoding since specialChars
-        // is always ASCII.
         if ($result !== null) {
             return $result;
         }
@@ -203,7 +217,6 @@ class AdminerDumpMarkdown
      */
     private function getAlign(string $colName, string $value): string
     {
-        // If table alignment is disabled, everything is forced to the left.
         if (!$this->tableAlign) {
             return 'left';
         }
@@ -212,20 +225,14 @@ class AdminerDumpMarkdown
             return $this->columnAlign[$colName];
         }
 
-        // Resolve de-duplicated names (e.g. "id_2" from a join producing two
-        // "id" columns) back to the original field name.
         $sourceField = $this->columnSourceMap[$colName] ?? $colName;
 
         if (isset($this->fields[$sourceField])) {
             $type = strtolower($this->fields[$sourceField]['type']);
-            // Boolean check must run before the numeric regex: 'tinyint'
-            // contains the substring 'int', so a tinyint(1) boolean column
-            // would otherwise always match the numeric branch first and
-            // never be centered as a boolean.
             if ($type === 'boolean' || ($type === 'tinyint' && strpos($this->fields[$sourceField]['full_type'], '(1)') !== false)) {
                 return $this->typeAlign['bool'];
             }
-            if (preg_match('/int|float|double|decimal|numeric|real|bit/', $type)) {
+            if (preg_match('/\b(int|integer|tinyint|smallint|mediumint|bigint|float|double|decimal|dec|numeric|real|bit)\b/i', $type)) {
                 return $this->typeAlign['number'];
             }
         }
@@ -243,6 +250,12 @@ class AdminerDumpMarkdown
      */
     private function markdownRow(array $row, array $columnWidth, array $aligns, string $separator, string $filler): string
     {
+        if ($this->compact) {
+            $inner = implode($separator, array_map('strval', array_values($row)));
+            $t = $this->markdownChr['table'];
+            return $this->tablePipes ? $t . $filler . $inner . $filler . $t : $inner;
+        }
+
         $padded = [];
         foreach ($row as $k => $v) {
             $mode = $aligns[$k] ?? 'left';
@@ -251,6 +264,32 @@ class AdminerDumpMarkdown
         $out = implode($separator, $padded);
         $t = $this->markdownChr['table'];
         return $this->tablePipes ? $t . $filler . $out . $filler . $t : $out;
+    }
+
+    /**
+     * @param array<int|string,mixed> $keys
+     * @param array<string,string> $aligns
+     */
+    private function compactSeparator($keys, array $aligns): string
+    {
+        $h = $this->markdownChr['header'];
+        $t = $this->markdownChr['table'];
+        $s = $this->markdownChr['space'];
+        $parts = [];
+        foreach ($keys as $k) {
+            $mode = $aligns[$k] ?? 'left';
+            if (!$this->tableAlign) {
+                $parts[] = str_repeat($h, 3);
+            } elseif ($mode === 'center') {
+                $parts[] = ':' . $h . ':';
+            } elseif ($mode === 'right') {
+                $parts[] = str_repeat($h, 2) . ':';
+            } else {
+                $parts[] = ':' . str_repeat($h, 2);
+            }
+        }
+        $inner = implode($s . $t . $s, $parts);
+        return $this->tablePipes ? $t . $s . $inner . $s . $t : $inner;
     }
 
     /**
@@ -277,6 +316,18 @@ class AdminerDumpMarkdown
             return "> No data found in table.\n";
         }
 
+        if ($this->compact) {
+            $t = $this->markdownChr['table'];
+            $s = $this->markdownChr['space'];
+            $sep = $s . $t . $s;
+            $out = $this->markdownRow($this->mapHeader($rows[0]), $columnWidth, $aligns, $sep, $s) . "\n";
+            $out .= $this->compactSeparator(array_keys($rows[0]), $aligns) . "\n";
+            foreach ($rows as $row) {
+                $out .= $this->markdownRow($row, $columnWidth, $aligns, $sep, $s) . "\n";
+            }
+            return $out;
+        }
+
         $t = $this->markdownChr['table'];
         $h = $this->markdownChr['header'];
         $s = $this->markdownChr['space'];
@@ -290,16 +341,16 @@ class AdminerDumpMarkdown
         foreach ($columnKeys as $i => $k) {
             $extra = 0;
             if ($i > 0) {
-                $extra++; // absorbs the space before this column's join pipe
+                $extra++;
             }
             if ($i < $lastIndex) {
-                $extra++; // absorbs the space after this column's join pipe
+                $extra++;
             }
             if ($this->tablePipes && $i === 0) {
-                $extra++; // absorbs the leading "| " wrap space
+                $extra++;
             }
             if ($this->tablePipes && $i === $lastIndex) {
-                $extra++; // absorbs the trailing " |" wrap space
+                $extra++;
             }
 
             $w = $columnWidth[$k] + $extra;
@@ -333,7 +384,24 @@ class AdminerDumpMarkdown
      */
     private function bool($value): string
     {
-        return $value == 1 ? 'Yes' : 'No';
+        return ($value === 1 || $value === '1' || $value === true) ? 'Yes' : 'No';
+    }
+
+    private function loadFields(string $table): void
+    {
+        if ($table === '') {
+            $this->fields = [];
+            $this->fieldsTable = null;
+            return;
+        }
+
+        if ($this->fieldsTable !== $table) {
+            $this->fields = [];
+            foreach (Adminer\fields($table) as $f) {
+                $this->fields[$f['field']] = $f;
+            }
+            $this->fieldsTable = $table;
+        }
     }
 
     /**
@@ -344,11 +412,195 @@ class AdminerDumpMarkdown
         return [$this->type => $this->format];
     }
 
+    /**
+     * Extra fields on Adminer's Export form. Shown only when Format = Markdown.
+     */
+    public function dumpPrint(): void
+    {
+        $opts = $this->uiOptionValues();
+
+        echo "<table id='dump-markdown-options'>\n";
+        echo "<tr><th>Markdown<td>";
+
+        echo "<label>"
+            . "<input type='hidden' name='markdown[tablePipes]' value='0'>"
+            . "<input type='checkbox' name='markdown[tablePipes]' value='1'"
+            . ($opts['tablePipes'] ? ' checked' : '')
+            . "> Wrap tables with |</label><br>\n";
+
+        echo "<label>"
+            . "<input type='hidden' name='markdown[tableAlign]' value='0'>"
+            . "<input type='checkbox' name='markdown[tableAlign]' value='1'"
+            . ($opts['tableAlign'] ? ' checked' : '')
+            . "> Align numbers / booleans</label><br>\n";
+
+        echo "<label>"
+            . "<input type='hidden' name='markdown[compact]' value='0'>"
+            . "<input type='checkbox' name='markdown[compact]' value='1'"
+            . ($opts['compact'] ? ' checked' : '')
+            . "> Compact (no padding)</label><br>\n";
+
+        echo "NULL <input name='markdown[nullValue]' value='"
+            . $this->htmlEscape($opts['nullValue'])
+            . "' size='8'>\n";
+
+        echo " Sample rows <input type='number' name='markdown[rowSampleLimit]' min='1' max='100000' value='"
+            . (int) $opts['rowSampleLimit']
+            . "' style='width: 5em;'>\n";
+
+        echo " Truncate with <input name='markdown[truncationMarker]' value='"
+            . $this->htmlEscape($opts['truncationMarker'])
+            . "' size='4' placeholder='…'>\n";
+
+        echo "</table>\n";
+
+        $js = '(function(){'
+            . 'var box=document.getElementById("dump-markdown-options");'
+            . 'if(!box)return;'
+            . 'function selected(){'
+            . 'var r=document.querySelectorAll("input[name=format]");'
+            . 'for(var i=0;i<r.length;i++){if(r[i].checked)return r[i].value;}'
+            . 'var s=document.querySelector("select[name=format]");'
+            . 'return s?s.value:"";'
+            . '}'
+            . 'function sync(){box.style.display=selected()==="markdown"?"":"none";}'
+            . 'var r=document.querySelectorAll("input[name=format]");'
+            . 'for(var i=0;i<r.length;i++)r[i].addEventListener("change",sync);'
+            . 'var s=document.querySelector("select[name=format]");'
+            . 'if(s)s.addEventListener("change",sync);'
+            . 'sync();'
+            . '})();';
+
+        if (function_exists('Adminer\\script')) {
+            echo Adminer\script($js);
+        } else {
+            $nonce = function_exists('Adminer\\nonce') ? Adminer\nonce() : '';
+            echo "<script$nonce>$js</script>\n";
+        }
+    }
+
+    private function applyExportOptions(): void
+    {
+        if ($this->optionsApplied) {
+            return;
+        }
+        $this->optionsApplied = true;
+
+        $posted = $_POST['markdown'] ?? null;
+        if (!is_array($posted)) {
+            return;
+        }
+
+        if (array_key_exists('tablePipes', $posted)) {
+            $this->tablePipes = $this->toBool($posted['tablePipes']);
+        }
+        if (array_key_exists('tableAlign', $posted)) {
+            $this->tableAlign = $this->toBool($posted['tableAlign']);
+        }
+        if (array_key_exists('compact', $posted)) {
+            $this->compact = $this->toBool($posted['compact']);
+        }
+        if (array_key_exists('nullValue', $posted)) {
+            $this->nullValue = (string) $posted['nullValue'];
+        }
+        if (array_key_exists('rowSampleLimit', $posted)) {
+            $n = (int) $posted['rowSampleLimit'];
+            $this->rowSampleLimit = max(1, min(100000, $n));
+        }
+        if (array_key_exists('truncationMarker', $posted)) {
+            $this->truncationMarker = (string) $posted['truncationMarker'];
+        }
+
+        $this->persistExportOptions();
+    }
+
+    /**
+     * @return array{tablePipes:bool,tableAlign:bool,compact:bool,nullValue:string,rowSampleLimit:int,truncationMarker:string}
+     */
+    private function uiOptionValues(): array
+    {
+        return [
+            'tablePipes' => $this->cookieBool('tablePipes', $this->tablePipes),
+            'tableAlign' => $this->cookieBool('tableAlign', $this->tableAlign),
+            'compact' => $this->cookieBool('compact', $this->compact),
+            'nullValue' => $this->cookieString('nullValue', $this->nullValue),
+            'rowSampleLimit' => $this->cookieInt('rowSampleLimit', $this->rowSampleLimit),
+            'truncationMarker' => $this->cookieString('truncationMarker', $this->truncationMarker),
+        ];
+    }
+
+    private function persistExportOptions(): void
+    {
+        if (!function_exists('Adminer\\save_settings')) {
+            return;
+        }
+        Adminer\save_settings([
+            'tablePipes' => $this->tablePipes ? '1' : '0',
+            'tableAlign' => $this->tableAlign ? '1' : '0',
+            'compact' => $this->compact ? '1' : '0',
+            'nullValue' => $this->nullValue,
+            'rowSampleLimit' => (string) $this->rowSampleLimit,
+            'truncationMarker' => $this->truncationMarker,
+        ], 'adminer_markdown');
+    }
+
+    private function cookieBool(string $key, bool $fallback): bool
+    {
+        $v = $this->cookieRaw($key);
+        return $v === null ? $fallback : $this->toBool($v);
+    }
+
+    private function cookieString(string $key, string $fallback): string
+    {
+        $v = $this->cookieRaw($key);
+        return $v === null ? $fallback : $v;
+    }
+
+    private function cookieInt(string $key, int $fallback): int
+    {
+        $v = $this->cookieRaw($key);
+        if ($v === null || $v === '') {
+            return $fallback;
+        }
+        return max(1, min(100000, (int) $v));
+    }
+
+    private function cookieRaw(string $key): ?string
+    {
+        if (!function_exists('Adminer\\get_setting')) {
+            return null;
+        }
+        $v = Adminer\get_setting($key, 'adminer_markdown', null);
+        return $v === null ? null : (string) $v;
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function toBool($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        $value = strtolower(trim((string) $value));
+        return $value === '1' || $value === 'true' || $value === 'on' || $value === 'yes';
+    }
+
+    private function htmlEscape(string $value): string
+    {
+        if (function_exists('Adminer\\h')) {
+            return Adminer\h($value);
+        }
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+    }
+
     public function dumpDatabase(string $db): ?bool
     {
         if (($_POST['format'] ?? null) !== $this->type) {
             return null;
         }
+        $this->applyExportOptions();
+        $this->generatedSlugs = [];
 
         echo '# ' . $this->escapeMarkdown($db) . "\n\n";
 
@@ -372,9 +624,25 @@ class AdminerDumpMarkdown
 
     private function slugify(string $text): string
     {
-        $slug = strtolower($text);
-        $slug = (string) preg_replace('/[^\w\- ]+/u', '', $slug);
-        $slug = str_replace(' ', '-', $slug);
+        $lower = (!$this->disableUTF8 && $this->mbStrAvailable)
+            ? mb_strtolower($text, 'UTF-8')
+            : strtolower($text);
+
+        // Gestione fallback se preg_replace ritorna null su sequenze UTF-8 invalide
+        $replaced = preg_replace('/[^\p{L}\p{N}\-_ ]+/u', '', $lower);
+        $slug = (string) ($replaced !== null ? $replaced : preg_replace('/[^a-zA-Z0-9\-_ ]+/', '', $lower));
+        $slug = str_replace(' ', '-', trim($slug));
+        
+        if ($slug === '') {
+            $slug = 'table';
+        }
+
+        if (isset($this->generatedSlugs[$slug])) {
+            $this->generatedSlugs[$slug]++;
+            return $slug . '-' . $this->generatedSlugs[$slug];
+        }
+
+        $this->generatedSlugs[$slug] = 1;
         return $slug;
     }
 
@@ -383,13 +651,11 @@ class AdminerDumpMarkdown
         if (($_POST['format'] ?? null) !== $this->type) {
             return null;
         }
+        $this->applyExportOptions();
 
         echo '## ' . $this->escapeMarkdown($table) . "\n\n";
 
-        $this->fields = [];
-        foreach (Adminer\fields($table) as $f) {
-            $this->fields[$f['field']] = $f;
-        }
+        $this->loadFields($table);
 
         if ($style) {
             echo "### table structure\n\n";
@@ -399,8 +665,8 @@ class AdminerDumpMarkdown
             foreach ($this->fields as $f) {
                 $newRow = [
                     'Column name' => $this->processValue($f['field']),
-                    'Type' => $f['full_type'],
-                    'Comment' => $f['comment'],
+                    'Type' => $this->processValue($f['full_type']),
+                    'Comment' => ($f['comment'] ?? '') !== '' ? $this->processValue($f['comment']) : '',
                     'Null' => $this->bool($f['null']),
                     'AI' => $this->bool($f['auto_increment']),
                 ];
@@ -414,7 +680,6 @@ class AdminerDumpMarkdown
             echo $this->markdownTable($fieldRows, $fieldWidth, $structureAlign);
             echo "\n";
 
-            // Indexes and foreign keys don't apply to views.
             if (!$is_view) {
                 $this->dumpIndexes($table);
                 $this->dumpForeignKeys($table);
@@ -475,8 +740,6 @@ class AdminerDumpMarkdown
         foreach ($foreignKeys as $fk) {
             $targetColumns = [];
             foreach ($fk['target'] as $i => $col) {
-                // A null target element conventionally means "same column
-                // name as the source side" in Adminer's ForeignKey shape.
                 $targetColumns[] = $col !== null ? $col : ($fk['source'][$i] ?? '');
             }
             $references = $fk['table'] . '(' . implode(', ', $targetColumns) . ')';
@@ -511,19 +774,14 @@ class AdminerDumpMarkdown
         if (($_POST['format'] ?? null) !== $this->type) {
             return null;
         }
+        $this->applyExportOptions();
 
         echo "### Table Data\n\n";
 
-        if (empty($this->fields) && $table !== '') {
-            foreach (Adminer\fields($table) as $f) {
-                $this->fields[$f['field']] = $f;
-            }
-        }
+        $this->loadFields($table);
 
         $connection = Adminer\connection();
 
-        // Adminer <= 5.x supplies the complete query. Adminer 6.0+ passes an
-        // empty query and asks the driver to build/execute it from these parts.
         if ($query !== '') {
             $result = $connection->query($query, 1);
         } else {
@@ -547,25 +805,6 @@ class AdminerDumpMarkdown
         $columnWidth = [];
         $aligns = [];
 
-        // fetch_assoc() silently collapses columns that share a name (e.g.
-        // "id" appearing on both sides of a join) - only the last one
-        // survives. To keep both, read the field list from the result
-        // metadata (which still has duplicates) and pull values positionally
-        // with fetch_row() instead, de-duplicating names ourselves.
-        //
-        // Different result objects expose this metadata differently:
-        // - mysqli_result has fetch_fields() (all columns at once, safe to
-        //   use directly).
-        // - Adminer 6's own Result wrappers (adminer/drivers/*.inc.php)
-        //   only implement the singular fetch_field(): \stdClass, and on
-        //   at least the pgsql driver it has a non-nullable return type and
-        //   ALWAYS returns an object - including past the last column,
-        //   where pg_field_name()/pg_field_type() just fail silently
-        //   (emitting warnings) rather than making it return false.
-        //   Looping "while ($field = $result->fetch_field())" therefore
-        //   never terminates on that driver. Instead, fetch the first row
-        //   via fetch_row() to get a reliable column count from count(),
-        //   and call fetch_field() exactly that many times.
         $this->columnSourceMap = [];
         $fieldNames = null;
         $firstRow = null;
@@ -586,19 +825,39 @@ class AdminerDumpMarkdown
         $uniqueNames = null;
         if ($fieldNames !== null && method_exists($result, 'fetch_row')) {
             $uniqueNames = [];
-            $counts = [];
+            $counts = array_count_values($fieldNames);
+            $assigned = array_fill_keys($fieldNames, true);
+            $seen = [];
+
             foreach ($fieldNames as $name) {
-                $counts[$name] = ($counts[$name] ?? 0) + 1;
-                $unique = ($counts[$name] > 1) ? $name . '_' . $counts[$name] : $name;
-                $uniqueNames[] = $unique;
-                $this->columnSourceMap[$unique] = $name;
+                if ($counts[$name] === 1) {
+                    $uniqueNames[] = $name;
+                    $this->columnSourceMap[$name] = $name;
+                    continue;
+                }
+
+                if (!isset($seen[$name])) {
+                    $seen[$name] = 1;
+                    $uniqueNames[] = $name;
+                    $this->columnSourceMap[$name] = $name;
+                } else {
+                    $i = $seen[$name] + 1;
+                    $candidate = $name . '_' . $i;
+                    while (isset($assigned[$candidate])) {
+                        $i++;
+                        $candidate = $name . '_' . $i;
+                    }
+                    $assigned[$candidate] = true;
+                    $seen[$name] = $i;
+                    $uniqueNames[] = $candidate;
+                    $this->columnSourceMap[$candidate] = $name;
+                }
             }
         }
 
-        // If we already consumed the first row above (to count its
-        // columns), feed it back through the loop below before pulling any
-        // further rows from the result.
         $pendingRow = $firstRow;
+        $sep = $this->markdownChr['space'] . $this->markdownChr['table'] . $this->markdownChr['space'];
+        $fill = $this->markdownChr['space'];
 
         while (($rawRow = ($pendingRow !== null ? $pendingRow : ($uniqueNames !== null ? $result->fetch_row() : $result->fetch_assoc()))) !== null && $rawRow !== false) {
             $pendingRow = null;
@@ -608,9 +867,6 @@ class AdminerDumpMarkdown
                     $row[$uniqueNames[$i]] = $this->processValue($v);
                 }
             } else {
-                // Fallback for result objects that don't expose
-                // fetch_fields()/fetch_row() (best effort - duplicate
-                // column names will still collapse in this path).
                 foreach ($rawRow as $k => $v) {
                     $row[$k] = $this->processValue($v);
                 }
@@ -618,9 +874,21 @@ class AdminerDumpMarkdown
 
             if ($rn === 0) {
                 foreach ($row as $k => $v) {
-                    $columnWidth[$k] = $this->getStringLength($this->processValue($k));
                     $aligns[$k] = $this->getAlign($k, $v);
+                    if (!$this->compact) {
+                        $columnWidth[$k] = $this->getStringLength($this->processValue($k));
+                    }
                 }
+            }
+
+            if ($this->compact) {
+                if ($rn === 0) {
+                    echo $this->markdownRow($this->mapHeader($row), $columnWidth, $aligns, $sep, $fill) . "\n";
+                    echo $this->compactSeparator(array_keys($row), $aligns) . "\n";
+                }
+                echo $this->markdownRow($row, $columnWidth, $aligns, $sep, $fill) . "\n";
+                $rn++;
+                continue;
             }
 
             if ($rn < $this->rowSampleLimit) {
@@ -635,20 +903,18 @@ class AdminerDumpMarkdown
             }
 
             if ($rn >= $this->rowSampleLimit && !empty($sampleRows)) {
-                echo $this->markdownRow(
-                    $row,
-                    $columnWidth,
-                    $aligns,
-                    $this->markdownChr['space'] . $this->markdownChr['table'] . $this->markdownChr['space'],
-                    $this->markdownChr['space']
-                ) . "\n";
+                echo $this->markdownRow($row, $columnWidth, $aligns, $sep, $fill) . "\n";
             }
 
             $rn++;
         }
 
-        if ($rn <= $this->rowSampleLimit) {
+        if (!$this->compact && $rn <= $this->rowSampleLimit) {
             echo $this->markdownTable($sampleRows, $columnWidth, $aligns);
+        }
+
+        if ($this->compact && $rn === 0) {
+            echo "> No data found in table.\n";
         }
 
         echo "\n";
@@ -658,15 +924,14 @@ class AdminerDumpMarkdown
     public function dumpHeaders(string $identifier, bool $multi_table = false): ?string
     {
         if (($_POST['format'] ?? null) === $this->type) {
-            $this->sendHeader('Content-Type: text/markdown; charset=utf-8');
+            $this->applyExportOptions();
+            $charset = $this->disableUTF8 ? 'iso-8859-1' : 'utf-8';
+            $this->sendHeader("Content-Type: text/markdown; charset={$charset}");
             return 'md';
         }
         return null;
     }
 
-    /**
-     * Thin wrapper around header().
-     */
     protected function sendHeader(string $header): void
     {
         header($header);

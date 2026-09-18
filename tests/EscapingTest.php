@@ -24,12 +24,12 @@ final class EscapingTest extends TestCase
     {
         return [
             'asterisk' => ['a*b', 'a\\*b'],
-            'underscore' => ['a_b', 'a\\_b'],
-            'brackets' => ['[link]', '\\[link\\]'],
-            'parens' => ['(x)', '\\(x\\)'],
-            'braces' => ['{x}', '\\{x\\}'],
+            'underscore' => ['a_b', 'a_b'],
+            'brackets' => ['[link]', '[link]'],
+            'parens' => ['(x)', '(x)'],
+            'braces' => ['{x}', '{x}'],
             'pipe' => ['a|b', 'a\\|b'],
-            'hash' => ['#heading', '\\#heading'],
+            'hash' => ['#heading', '#heading'],
             'backslash itself' => ['a\\b', 'a\\\\b'],
             'plain text is untouched' => ['hello world', 'hello world'],
         ];
@@ -39,7 +39,7 @@ final class EscapingTest extends TestCase
     {
         $plugin = new AdminerDumpMarkdown();
         // Every special char in one string, not just the first one found.
-        $this->assertSame('\\*\\_\\[\\]', $this->callPrivateMethod($plugin, 'escapeMarkdown', ['*_[]']));
+        $this->assertSame('\\*_[]', $this->callPrivateMethod($plugin, 'escapeMarkdown', ['*_[]']));
     }
 
     public function testProcessValueReturnsConfiguredNullPlaceholder(): void

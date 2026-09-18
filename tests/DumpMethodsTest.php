@@ -54,7 +54,7 @@ final class DumpMethodsTest extends TestCase
         $plugin = new AdminerDumpMarkdown();
 
         $output = $this->captureOutput(fn() => $plugin->dumpDatabase('my_db'));
-        $this->assertSame("# my\\_db\n\n", $output);
+        $this->assertSame("# my_db\n\n", $output);
     }
 
     public function testDumpTablePrintsHeadingAndStructureTable(): void
@@ -157,7 +157,7 @@ final class DumpMethodsTest extends TestCase
         $plugin = new AdminerDumpMarkdown();
         $output = $this->captureOutput(fn() => $plugin->dumpTable('articles', 'CREATE', 0));
 
-        $this->assertStringContainsString('title\\(20\\) DESC', $output);
+        $this->assertStringContainsString('title(20) DESC', $output);
     }
 
     public function testDumpTableSkipsIndexesSectionWhenNoneDefined(): void
@@ -194,8 +194,8 @@ final class DumpMethodsTest extends TestCase
         $output = $this->captureOutput(fn() => $plugin->dumpTable('orders', 'CREATE', 0));
 
         $this->assertStringContainsString('### foreign keys', $output);
-        $this->assertStringContainsString('customer\\_id', $output);
-        $this->assertStringContainsString('customers\\(id\\)', $output);
+        $this->assertStringContainsString('customer_id', $output);
+        $this->assertStringContainsString('customers(id)', $output);
         $this->assertStringContainsString('CASCADE', $output);
         $this->assertStringContainsString('RESTRICT', $output);
     }
@@ -220,7 +220,7 @@ final class DumpMethodsTest extends TestCase
         $plugin = new AdminerDumpMarkdown();
         $output = $this->captureOutput(fn() => $plugin->dumpTable('orders', 'CREATE', 0));
 
-        $this->assertStringContainsString('legacy\\_orders\\(id\\)', $output);
+        $this->assertStringContainsString('legacy_orders(id)', $output);
     }
 
     public function testDumpTableSkipsIndexesAndForeignKeysForViews(): void

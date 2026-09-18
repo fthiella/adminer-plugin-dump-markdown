@@ -1,5 +1,7 @@
 # adminer-plugin-dump-markdown
 
+![CI](https://github.com/fthiella/adminer-plugin-dump-markdown/actions/workflows/ci.yml/badge.svg)
+
 This plugin enhances Adminer by adding a "Markdown" export format, allowing you
 to dump database structure and data into Markdown-formatted text files (`.md`).
 
@@ -15,6 +17,14 @@ For each dumped database, the plugin outputs:
   widths, then streamed for larger tables.
 - If a query fails, an inline `> ERROR: query failed: ...` note instead of a
   silently empty section.
+
+On the Export page (Format = Markdown) extra fields appear:
+wrap with `|`, alignment, compact, NULL placeholder, sample size,
+truncation mark. Constructor values are the defaults; the form
+overrides them for that dump and is stored in the `adminer_markdown` cookie.
+
+`compact` skips padding and streams every row immediately
+(`rowSampleLimit` and `truncationMarker` are ignored).
 
 ## Requirements
 
@@ -42,20 +52,23 @@ Adminer 6.0.0 introduced a new, simpler plugin system based on the `adminer-plug
            'rowSampleLimit' => 100,
            'nullValue'      => 'N/D',
            'disableUTF8'     => false,
-           'markdown_chr' => ['space' => ' ', 'table' => '|', 'header' => '-'],
-           'specialChars'   => '\*[](){+-#\!|',
            'tableAlign'     => true,
            'tablePipes'     => false,
+           'compact'        => false,
            'typeAlign'      => [
                'number' => 'right',
                'bool'   => 'center',
                'default' => 'left'
            ]
-       )]),
+       ]),
    );
    ```
 
    If you omit this file, the plugin will use its default settings.
+
+Do not `include`/`require` dump-markdown.php inside adminer-plugins.php.
+Adminer already loads every `.php` in `adminer-plugins/`.
+Only `return [ new AdminerDumpMarkdown([...]) ];`
 
 4. Your `index.php` can be minimal:
 
@@ -99,8 +112,7 @@ function adminer_object() {
             'nullValue'      => 'N/D',
             'tablePipes'     => false,
             'tableAlign'     => false,
-            'specialChars'   => '\*[](){+-#\!|',
-            'columnAlign'    => ['id' => 'center'],
+            'compact'        => false,
             'typeAlign'      => [
                 'number'  => 'right',
                 'bool'    => 'center',
@@ -134,17 +146,19 @@ The following configuration options are available:
 ### rowSampleLimit (integer, optional, default: 100):
 
 Specifies the maximum number of rows to sample from each table when determining column widths for Markdown table formatting.
+Ignored when compact is true.
 
 ### nullValue (string, optional, default: "N/D"):
 
 Defines the string to be used in the Markdown output to represent NULL database values.
 
-### specialChars (string, optional, default: `\*_[](){}+-#\!|`)
+### specialChars (string, optional, default: `\*|`)
 
-Defines the set of special Markdown characters that will be escaped with a backslash (\) in the output.
+Characters escaped with a backslash in cell text. Pipe and backslash
+are required so tables stay valid; `*` avoids accidental emphasis.
+Underscores are left as-is (`user_id`). Pass the complete set if you need it:
 
-Note: the default includes _ for maximum compatibility with older/non-standard Markdown parsers,
-but can be omitted for better readability.
+    'specialChars' => '\\*_[](){}+-#\\!|',
 
 ### markdown_chr (array, optional, default: ['space' => ' ', 'table' => '|', 'header' => '-']):
 
@@ -178,6 +192,8 @@ sampled rows), it gets cut to fit:
   values instead (e.g. `"exampl~"` instead of `"example"`).
   It's UTF-8 safe.
 
+Ignored when compact is true.
+
 #### Alignment Control
 
 - `typeAlign` (array): Defines default alignment based on data types.
@@ -185,6 +201,18 @@ sampled rows), it gets cut to fit:
     bool: defaults to center.
     default: defaults to left (for text, varchars, dates, etc.).
 - `columnAlign` (array): Manual override for specific columns. Example: `'column_name' => 'center'`
+
+### compact (boolean, optional, default: false):
+
+When true, emits compact Markdown tables without cell padding spaces.
+Still preserves alignment markers (`:---`, `:---:`, `---:`) if `tableAlign` is enabled.
+Useful for keeping file sizes small on huge dumps.
+
+## Export options
+
+On the Export page, when Format is Markdown, extra fields appear.
+They override the constructor for that dump only. Last values are
+remembered in a cookie (`adminer_markdown`).
 
 ## Testing
 
@@ -199,6 +227,8 @@ phpunit
 from the repository root (requires PHPUnit 10+, since the suite uses PHP 8
 attributes for data providers; `phpunit.xml` and the `tests/` directory
 are included in the repository).
+
+Testing requires PHP 8.1+ with PHPUnit 10+ (as tests use PHP 8 Attributes for data providers), though the plugin itself is compatible with PHP 7.2+.
 
 ## Notes
 
