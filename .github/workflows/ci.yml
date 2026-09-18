@@ -6,13 +6,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: ['7.4', '8.0', '8.1', '8.2', '8.3']
+        php-version: ['8.0', '8.1', '8.2', '8.3']
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
           extensions: mbstring, iconv
-      - name: Run Tests
-        run: php test_suite.php
+          tools: phpunit
+
+      - name: Lint
+        run: php -l dump-markdown.php
+
+      - name: Run tests
+        run: phpunit
